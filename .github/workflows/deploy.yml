@@ -1,0 +1,43 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency: production
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+      - name: Upload release
+        env:
+          H: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+          P: ${{ secrets.VPS_PORT || 22 }}
+        run: |
+          REL=${GITHUB_SHA::12}
+          SSH="ssh -i ~/.ssh/id_deploy -p $P"
+          rsync -az --delete -e "$SSH" \
+            --exclude .git --exclude .github --exclude tests --exclude data --exclude __pycache__ \
+            ./ "$H:/opt/footballquiz/releases/$REL/"
+          $SSH "$H" "bash /opt/footballquiz/releases/$REL/deploy/release.sh $REL"

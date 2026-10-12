@@ -1,0 +1,18 @@
+[Unit]
+Description=Football Quiz
+After=network.target
+
+[Service]
+User=fq
+Group=fq
+WorkingDirectory=/opt/footballquiz/current
+Environment=FQ_DATA_DIR=/var/lib/fq
+Environment=FQ_ENV=production
+EnvironmentFile=/etc/footballquiz.env
+ExecStart=/opt/footballquiz/venv/bin/python -m uvicorn --factory app.main:app_factory --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
