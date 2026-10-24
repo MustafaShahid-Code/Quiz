@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark light">
+<title>Football Challenge</title>
+<link rel="icon" id="favicon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32.png">
+<link rel="alternate icon" href="/static/brand/favicon.ico">
+<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+<link rel="manifest" href="/static/brand/site.webmanifest">
+<meta name="theme-color" content="#4F6BFF">
+<link rel="stylesheet" href="game.css">
+<style id="theme-font"></style>
+</head>
+<body>
+<div id="viewport" data-btn="solid">
+  <div id="bg"></div>
+  <div id="bg-overlay"></div>
+  <svg id="swoosh" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="swg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--bg-glow)" stop-opacity=".0"/><stop offset=".5" stop-color="var(--bg-glow)" stop-opacity=".85"/><stop offset="1" stop-color="var(--accent-line)" stop-opacity=".0"/></linearGradient></defs>
+    <g fill="none" stroke="url(#swg)" stroke-linecap="round">
+      <path d="M-100 1020 C 400 560, 1000 560, 2000 900" stroke-width="3"/>
+      <path d="M-100 1060 C 420 640, 1000 640, 2000 960" stroke-width="2"/>
+      <path d="M-100 980 C 380 500, 1020 500, 2000 840" stroke-width="2"/>
+      <path d="M-100 1100 C 450 720, 1000 700, 2000 1020" stroke-width="4"/>
+    </g>
+  </svg>
+  <div class="light l1"></div><div class="light l2"></div>
+
+  <div id="stage">
+    <!-- brand bar -->
+    <header id="brandbar">
+      <img id="logoLeft" alt="" hidden>
+      <div id="titlewrap"><h1 id="title"></h1><div id="accent"></div></div>
+      <img id="logoRight" alt="" hidden>
+    </header>
+
+    <!-- WELCOME -->
+    <section id="screen-welcome" class="screen" hidden>
+      <p id="tagline"></p>
+      <div id="langs"></div>
+      <button id="startBtn" class="btn big" data-action="start" type="button"></button>
+      <p id="instructions"></p>
+      <div id="chip" class="chip"><i></i><span></span></div>
+      <p id="welcomeNote" class="note"></p>
+      <button id="changeGame" class="btn small ghost" data-action="games" type="button" hidden></button>
+    </section>
+
+    <!-- QUESTION -->
+    <section id="screen-lock" class="screen" hidden>
+      <div id="lockBox">
+        <div id="lockIcon" aria-hidden="true">🔒</div>
+        <h2 id="lockName"></h2>
+        <label id="lockLabel" for="lockInput"></label>
+        <input id="lockInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="128">
+        <div id="lockErr" role="alert"></div>
+        <button id="lockBtn" class="btn big" type="button"></button>
+        <button id="lockBack" class="btn small ghost" type="button" hidden></button>
+      </div>
+    </section>
+
+    <section id="screen-games" class="screen" hidden>
+      <div id="gameCards"></div>
+    </section>
+
+    <section id="screen-question" class="screen" hidden>
+      <div id="card"><img id="qimg" alt=""><div id="stamp" aria-hidden="true">✕</div></div>
+      <div id="reveal" hidden>
+        <div id="sticker"><img id="revealImg" alt=""><div id="revealCap" hidden></div></div>
+        <div id="burstwrap"><svg id="burst" viewBox="0 0 100 60" preserveAspectRatio="none"><polygon id="burstPoly" points=""/></svg>
+          <div id="burstText"><small id="burstTitle"></small><b id="burstMsg"></b></div></div>
+      </div>
+      <div id="timer" hidden><svg viewBox="0 0 100 100"><circle class="tbg" cx="50" cy="50" r="44"/><circle class="tring" cx="50" cy="50" r="44"/></svg><b id="timerNum"></b></div>
+      <div id="vaultBadge" aria-hidden="true">🔐</div>
+      <div id="qtext"></div>
+      <div id="confirmBar" hidden><i></i></div>
+      <div id="explanation" hidden></div>
+      <div id="options"></div>
+      <div id="footer">
+        <div id="score" class="pill"></div>
+        <div id="dots"></div>
+        <button id="nextBtn" class="btn small" data-action="next" type="button" hidden></button>
+        <div id="autobar" hidden><i></i></div>
+      </div>
+    </section>
+
+    <!-- VAULT (shown over the question when a vault game's question is answered) -->
+    <section id="vault" class="screen" hidden>
+      <div id="vaultTitle"></div>
+      <div id="vaultScene">
+        <div id="vaultInterior">
+          <div id="prizeCard"><div id="prizeImgWrap"><img id="prizeImg" alt="" hidden><span id="prizeIcon">🎁</span></div><b id="prizeName"></b><small id="prizeDesc"></small></div>
+        </div>
+        <div id="vaultDoor">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <circle cx="100" cy="100" r="86" class="vd-ring"/><circle cx="100" cy="100" r="72" class="vd-face"/>
+            <g id="vaultDial"><circle cx="100" cy="100" r="34" class="vd-hub"/>
+              <g class="vd-spokes"><rect x="96" y="40" width="8" height="40" rx="4"/><rect x="96" y="120" width="8" height="40" rx="4"/><rect x="40" y="96" width="40" height="8" rx="4"/><rect x="120" y="96" width="40" height="8" rx="4"/></g>
+              <circle cx="100" cy="100" r="9" class="vd-pin"/></g>
+            <g class="vd-bolts"><circle cx="30" cy="30" r="5"/><circle cx="170" cy="30" r="5"/><circle cx="30" cy="170" r="5"/><circle cx="170" cy="170" r="5"/></g>
+          </svg>
+        </div>
+      </div>
+      <div id="vaultMsg"></div>
+      <button id="vaultNext" class="btn small" data-action="next" type="button"></button>
+    </section>
+
+    <!-- RESULT -->
+    <section id="screen-result" class="screen" hidden>
+      <div id="trophy"></div>
+      <h2 id="resTitle"></h2>
+      <div id="resScore"></div>
+      <div id="resLine"></div>
+      <div id="prizeList"></div>
+      <div id="resButtons">
+        <button class="btn big" data-action="again" type="button" id="againBtn"></button>
+        <button class="btn big ghost" data-action="home" type="button" id="homeBtn"></button>
+      </div>
+    </section>
+
+    <div id="miniDot" class="dot" hidden title=""></div>
+    <div id="ribbon" hidden></div>
+  </div>
+
+  <!-- BRANDING / SPONSORS (full viewport, first screen) -->
+  <section id="screen-branding" data-action="enter" hidden>
+    <div id="slides"></div>
+    <div id="slideDots"></div>
+    <div id="brandHint" class="pulse"><span id="hintA"></span><span id="hintB"></span></div>
+  </section>
+
+  <canvas id="confetti"></canvas>
+  <div id="touchLayer"></div>
+  <div id="toast" hidden></div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
