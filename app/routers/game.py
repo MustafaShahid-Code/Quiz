@@ -146,7 +146,7 @@ def create_session(body: SessionStartIn, request: Request, conn=Depends(get_db))
     g = game_row(conn, body.game)
     if g and not _access_ok(conn, g, request):
         raise HTTPException(401, "This game needs its access password")
-    return quiz.start_session(conn, body.lang, body.game)
+    return quiz.start_session(conn, body.lang, body.game, body.player_name)
 
 
 @router.get("/api/game/sessions/{sid}/question")

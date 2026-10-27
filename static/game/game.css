@@ -141,6 +141,29 @@ html[dir="rtl"] #confirmBar i { transform-origin:right center; }
 #resButtons { position:absolute; top:920px; left:0; right:0; display:flex; gap:40px; justify-content:center; }
 #resButtons .btn { font-size:36px; padding:14px 64px; }
 
+/* challenge mode: player name + WIN / LOSE */
+#resName { position:absolute; top:205px; left:80px; right:80px; font-size:64px; font-weight:800; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#resName:empty { display:none; }
+#resMsg { position:absolute; top:830px; left:0; right:0; font-size:38px; color:var(--text-muted); }
+#screen-result.named #trophy { top:290px; width:240px; height:240px; }
+#screen-result.named #resTitle { top:555px; }
+#screen-result.decided #resTitle { top:545px; font-size:124px; line-height:1.05; letter-spacing:.02em; text-shadow:0 6px 30px rgba(0,0,0,.35); animation:stampin .6s cubic-bezier(.2,1.6,.4,1) both; }
+#screen-result.decided #resLine { top:735px; font-size:46px; }
+#screen-result.decided #resMsg { top:815px; }
+#screen-result.won #resTitle { color:var(--correct); }
+#screen-result.lost #resTitle { color:var(--incorrect); }
+#screen-result.lost #trophy svg { animation:trophy 1.2s cubic-bezier(.2,1.5,.4,1) both; }
+
+/* name screen */
+#nameBox { position:absolute; top:200px; left:50%; transform:translateX(-50%); width:880px; display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; }
+#nameIcon { font-size:96px; line-height:1; }
+#namePrompt { margin:0; font-size:64px; }
+#nameRule { margin:0; min-height:40px; font-size:34px; opacity:.9; color:var(--text-muted); }
+#nameInput { width:100%; font-size:64px; text-align:center; padding:22px 28px; border-radius:var(--btn-radius); border:4px solid color-mix(in srgb, var(--text) 40%, transparent); background:rgba(0,0,0,.28); color:var(--text); outline:none; font-family:inherit; }
+#nameInput:focus { border-color:var(--btn-sel); }
+#nameErr { min-height:44px; font-size:32px; color:var(--incorrect); font-weight:700; }
+#nameBtn { margin-top:4px; }
+
 /* ---------- branding / sponsors ---------- */
 #screen-branding { position:absolute; inset:0; background:var(--branding-bg); cursor:pointer; z-index:5; }
 #slides { position:absolute; inset:0; }

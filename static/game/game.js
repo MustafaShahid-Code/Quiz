@@ -15,13 +15,13 @@ const T = {
         perfect: 'PERFECT SCORE!', high: 'Great job, champion!', normal: 'Good effort! Play again?',
         sensor_lidar: 'LiDAR touch active', sensor_lidar_unval: 'LiDAR (not validated)', sensor_sim: 'Simulator input',
         sensor_off: 'Sensor offline – mouse / touch active', loading: 'Loading…', no_q: 'No questions are available in this language yet.',
-        error: 'Something went wrong. Touch to try again.', preview: 'PREVIEW', password: 'Password', unlock: 'Unlock', wrong_pw: 'Wrong password', choose: 'Choose your game', change_game: 'Change game', soon: 'Coming soon' },
+        error: 'Something went wrong. Touch to try again.', name_prompt: 'Enter your name', name_required: 'Please type your name to start', rule: (n, tot) => `Answer ${n} of ${tot} correctly to win`, win: 'YOU WIN!', lose: 'YOU LOSE', preview: 'PREVIEW', password: 'Password', unlock: 'Unlock', wrong_pw: 'Wrong password', choose: 'Choose your game', change_game: 'Change game', soon: 'Coming soon' },
   ar: { start: 'ابدأ اللعبة', play_again: 'العب مرة أخرى', home: 'الرئيسية', next: 'التالي', finish: 'عرض النتيجة', score: 'النقاط',
         final_score: 'النتيجة النهائية', correct_line: (c, a, t) => `الإجابات الصحيحة: ${c} من ${t}`,
         perfect: 'نتيجة كاملة!', high: 'أحسنت يا بطل!', normal: 'مجهود جيد! العب مرة أخرى؟',
         sensor_lidar: 'لمس LiDAR فعّال', sensor_lidar_unval: 'LiDAR (غير معتمد)', sensor_sim: 'إدخال محاكاة',
         sensor_off: 'الحساس غير متصل – اللمس/الفأرة متاح', loading: 'جارٍ التحميل…', no_q: 'لا توجد أسئلة بهذه اللغة حالياً.',
-        error: 'حدث خطأ. المس الشاشة للمحاولة مرة أخرى.', preview: 'معاينة', password: 'كلمة المرور', unlock: 'فتح', wrong_pw: 'كلمة المرور خاطئة', choose: 'اختر لعبتك', change_game: 'تغيير اللعبة', soon: 'قريباً' },
+        error: 'حدث خطأ. المس الشاشة للمحاولة مرة أخرى.', name_prompt: 'أدخل اسمك', name_required: 'يرجى كتابة اسمك للبدء', rule: (n, tot) => `أجب عن ${n} من ${tot} بشكل صحيح لتفوز`, win: 'لقد فزت!', lose: 'لقد خسرت', preview: 'معاينة', password: 'كلمة المرور', unlock: 'فتح', wrong_pw: 'كلمة المرور خاطئة', choose: 'اختر لعبتك', change_game: 'تغيير اللعبة', soon: 'قريباً' },
 };
 const LANG_NAMES = { en: 'English', ar: 'العربية' };
 
@@ -50,9 +50,9 @@ function adminHeaders() { const t = localStorage.getItem('fq_token'); return t ?
 const FOOTBALL_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><circle cx="200" cy="200" r="180" fill="#fff" stroke="#1b1b1b" stroke-width="8"/><polygon points="200,120 262,165 238,238 162,238 138,165" fill="#1b1b1b"/></svg>');
 let previewState = null;
 const api = {
-  async start(lang) {
+  async start(lang, playerName) {
     if (PREVIEW) { previewState = { done: false, score: 0, q: await previewQuestion(lang) }; return { session_id: 'preview', total: 1, lang }; }
-    return http('/api/game/sessions', { method: 'POST', gate: S.game && S.game.slug, body: JSON.stringify({ lang, game: S.game ? S.game.slug : null }) });
+    return http('/api/game/sessions', { method: 'POST', gate: S.game && S.game.slug, body: JSON.stringify({ lang, game: S.game ? S.game.slug : null, player_name: playerName || null }) });
   },
   async question(sid) {
     if (PREVIEW) return previewState.done ? { finished: true, score: previewState.score, total: 1 }
@@ -128,10 +128,10 @@ const pick = (arr) => arr && arr.length ? arr[Math.floor(Math.random() * arr.len
 /* ------------------------------------------------------------------ screens */
 function show(name) {
   S.screen = name; $('vault').hidden = true;
-  for (const n of ['welcome', 'question', 'result', 'games', 'lock']) $('screen-' + n).hidden = n !== name;
+  for (const n of ['welcome', 'question', 'result', 'games', 'lock', 'name']) $('screen-' + n).hidden = n !== name;
   $('screen-branding').hidden = name !== 'branding';
   $('brandbar').hidden = name === 'branding';
-  $('miniDot').hidden = name === 'branding' || name === 'welcome' || name === 'games' || name === 'lock';
+  $('miniDot').hidden = name === 'branding' || name === 'welcome' || name === 'games' || name === 'lock' || name === 'name';
   if (name !== 'branding') stopSlides();
   clearTimers(); resetIdle();
 }
@@ -179,6 +179,29 @@ function goWelcome() {
   const n = S.cfg.available_questions[S.lang] || 0;
   $('welcomeNote').textContent = n ? '' : t('no_q');
   $('startBtn').hidden = !n; renderChip();
+}
+/* ---- challenge mode: ask the player's name; "answer X of Y correctly to win" */
+const askName = () => !!S.settings.ask_player_name && !PREVIEW;
+function ruleLine() {
+  const need = Number(S.settings.win_correct_needed) || 0; if (!need) return '';
+  const avail = S.cfg.available_questions[S.lang] || 0, per = Number(S.settings.questions_per_session) || 0;
+  const total = per ? Math.min(per, avail) : avail; return total ? t('rule', Math.min(need, total), total) : '';
+}
+function begin() { return askName() ? goName() : startGame(S.lang); }
+function goName() {
+  show('name'); S.phase = 'idle'; setLang(S.lang);
+  const inp = $('nameInput'), err = $('nameErr'), btn = $('nameBtn');
+  $('namePrompt').textContent = S.settings['name_prompt_' + S.lang] || t('name_prompt'); $('nameRule').textContent = ruleLine();
+  btn.textContent = S.settings['name_button_' + S.lang] || t('start'); $('nameBack').textContent = t('home');
+  inp.value = ''; err.textContent = ''; inp.dir = 'auto'; btn.disabled = false; setTimeout(() => inp.focus(), 80);
+  const go = () => {
+    const n = inp.value.replace(/\s+/g, ' ').trim();
+    if (!n) { err.textContent = t('name_required'); inp.focus(); return; }
+    btn.disabled = true; startGame(S.lang, n);
+  };
+  btn.onclick = go; $('nameBack').onclick = goBranding;
+  inp.oninput = () => { err.textContent = ''; resetIdle(); };
+  inp.onkeydown = (e) => { e.stopPropagation(); resetIdle(); if (e.key === 'Enter') { e.preventDefault(); go(); } else if (e.key === 'Escape') goWelcome(); };
 }
 
 /* ---- game selection (only when more than one game can be played and the link is not pinned to one) */
@@ -293,11 +316,11 @@ function renderChip() {
 }
 
 /* ------------------------------------------------------------------ game flow */
-async function startGame(lang) {
+async function startGame(lang, playerName) {
   try {
-    S.lang = lang; setLang(lang); S.results = []; S.score = 0;
-    S.session = await api.start(lang); show('question'); await loadQuestion();
-  } catch (e) { if (e.status === 401) { setTok(S.game.slug, null); try { await loadGame(S.game.slug); } catch (x) { /* ignore */ } return goLock(S.chosen); } toast(e.status === 409 ? t('no_q') : t('error')); goWelcome(); }
+    S.lang = lang; setLang(lang); S.results = []; S.score = 0; S.playerName = playerName || null;
+    S.session = await api.start(lang, playerName); show('question'); await loadQuestion();
+  } catch (e) { if (e.status === 422 && askName()) { toast(e.message || t('name_required')); return goName(); } if (e.status === 401) { setTok(S.game.slug, null); try { await loadGame(S.game.slug); } catch (x) { /* ignore */ } return goLock(S.chosen); } toast(e.status === 409 ? t('no_q') : t('error')); goWelcome(); }
 }
 async function loadQuestion() {
   clearTimers(); S.phase = 'loading';
@@ -438,6 +461,17 @@ function next() {
 async function showResult() {
   const r = await api.result(S.session.session_id); show('result'); S.phase = 'result';
   const pl = $('prizeList'); pl.innerHTML = ''; $('screen-result').classList.toggle('vaultres', isVault());
+  const rs = $('screen-result'), named = !isVault() && !!r.player_name, decided = !isVault() && !!r.outcome;
+  rs.classList.toggle('named', named); rs.classList.toggle('decided', decided); rs.classList.remove('won', 'lost');
+  $('resName').textContent = named ? r.player_name : ''; $('resMsg').textContent = '';
+  if (decided) {
+    const win = r.outcome === 'win'; rs.classList.add(win ? 'won' : 'lost');
+    $('trophy').innerHTML = win ? TROPHY : RED_CARD;
+    $('resTitle').textContent = S.settings[(win ? 'win' : 'lose') + '_title_' + S.lang] || t(win ? 'win' : 'lose');
+    $('resScore').textContent = ''; $('resLine').textContent = t('correct_line', r.correct, r.attempted, r.total);
+    $('resMsg').textContent = S.settings[(win ? 'win' : 'lose') + '_message_' + S.lang] || '';
+    tone(win ? 'fanfare' : 'wrong'); if (win) celebrate(true); return;
+  }
   if (isVault()) {
     $('trophy').innerHTML = r.prizes.length ? VAULT_OPEN : VAULT_SHUT; $('resTitle').textContent = r.prizes.length ? (S.settings['vault_prizes_title_' + S.lang] || t('high')) : (S.settings['vault_lose_message_' + S.lang] || t('normal')); $('resScore').textContent = ''; $('resLine').textContent = '';
     for (const p of r.prizes) { const c = document.createElement('div'); c.className = 'pz'; if (p.image_url) { const i = document.createElement('img'); i.src = p.image_url; i.alt = ''; c.appendChild(i); } else c.appendChild(Object.assign(document.createElement('span'), { textContent: '🎁' })); const b = document.createElement('b'); b.textContent = p.name; c.appendChild(b); if (p.description) { const d = document.createElement('small'); d.textContent = p.description; c.appendChild(d); } pl.appendChild(c); }
@@ -456,6 +490,7 @@ function countUp(el, to, max) {
 const VAULT_SHUT = `<svg viewBox="0 0 200 200"><rect x="20" y="20" width="160" height="160" rx="22" fill="#5b6577" stroke="#2e3646" stroke-width="6"/><circle cx="100" cy="100" r="52" fill="#8b95a8" stroke="#2e3646" stroke-width="5"/><circle cx="100" cy="100" r="14" fill="#2e3646"/><g stroke="#2e3646" stroke-width="8" stroke-linecap="round"><path d="M100 58v20M100 122v20M58 100h20M122 100h20"/></g></svg>`;
 const VAULT_OPEN = `<svg viewBox="0 0 200 200"><rect x="20" y="20" width="160" height="160" rx="22" fill="#ffd814" stroke="#a87800" stroke-width="6"/><text x="100" y="128" font-size="96" text-anchor="middle">🎁</text></svg>`;
 const BALL = `<svg viewBox="0 0 400 400"><circle cx="200" cy="200" r="180" fill="#fff" stroke="#1b1b1b" stroke-width="8"/><polygon points="200,120 262,165 238,238 162,238 138,165" fill="#1b1b1b"/><g stroke="#1b1b1b" stroke-width="8" stroke-linecap="round"><line x1="200" y1="120" x2="200" y2="40"/><line x1="262" y1="165" x2="330" y2="130"/><line x1="238" y1="238" x2="290" y2="310"/><line x1="162" y1="238" x2="110" y2="310"/><line x1="138" y1="165" x2="70" y2="130"/></g></svg>`;
+const RED_CARD = `<svg viewBox="0 0 400 400"><g transform="rotate(-10 200 200)"><rect x="120" y="50" width="160" height="240" rx="18" fill="#ff3b5c" stroke="#a3112a" stroke-width="8"/><rect x="140" y="70" width="40" height="200" rx="14" fill="#fff" opacity=".18"/></g><path d="M120 330q80-50 160 0" fill="none" stroke="#a3112a" stroke-width="10" stroke-linecap="round" opacity=".55"/></svg>`;
 const TROPHY = `<svg viewBox="0 0 400 400"><path d="M120 60h160v90c0 55-35 95-80 95s-80-40-80-95z" fill="#f5b800" stroke="#a87800" stroke-width="6"/><path d="M120 80H70c0 60 25 90 62 98M280 80h50c0 60-25 90-62 98" fill="none" stroke="#f5b800" stroke-width="16" stroke-linecap="round"/><rect x="180" y="245" width="40" height="55" fill="#e0a500"/><rect x="130" y="300" width="140" height="28" rx="6" fill="#a87800"/><rect x="110" y="328" width="180" height="34" rx="8" fill="#6b4a00"/><ellipse cx="170" cy="110" rx="14" ry="38" fill="#ffe27a" opacity=".7"/></svg>`;
 
 function drawBurst(spikes) {
@@ -473,12 +508,12 @@ function activate(el, source) {
   const a = el.dataset.action;
   if (a === 'enter') return goWelcome();
   if (a === 'lang') { if (el.disabled) return; S.lang = el.dataset.lang; setLang(S.lang); goWelcomeKeep(); return; }
-  if (a === 'start') return startGame(S.lang);
+  if (a === 'start') return begin();
   if (a === 'game') return chooseGame(el.dataset.slug);
   if (a === 'games') { S.chosen = false; return goGames(); }
   if (a === 'option') return selectOption(Number(el.dataset.id), source);
   if (a === 'next') return next();
-  if (a === 'again') return startGame(S.lang);
+  if (a === 'again') return begin();
   if (a === 'home') return goBranding();
 }
 function goWelcomeKeep() { const n = S.cfg.available_questions[S.lang] || 0; $('welcomeNote').textContent = n ? '' : t('no_q'); $('startBtn').hidden = !n; }
@@ -494,12 +529,12 @@ addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); return; }
   if (e.key === 'Escape') { if (!document.fullscreenElement) goBranding(); return; }
   if (S.screen === 'branding' && (e.key === 'Enter' || e.key === ' ')) return goWelcome();
-  if (S.screen === 'welcome' && (e.key === 'Enter' || e.key === ' ') && !$('startBtn').hidden) return startGame(S.lang);
+  if (S.screen === 'welcome' && (e.key === 'Enter' || e.key === ' ') && !$('startBtn').hidden) return begin();
   if (S.screen === 'question') {
     if (e.key === 'Enter' || e.key === ' ') { if (S.phase === 'feedback') return next(); if (S.phase === 'confirming') return submit(); }
     const idx = '1234ABCDabcd'.indexOf(e.key); if (idx >= 0 && S.q) { const o = S.q.options[idx % 4]; if (o) selectOption(o.id, 'keyboard'); }
   }
-  if (S.screen === 'result' && (e.key === 'Enter' || e.key === ' ')) startGame(S.lang);
+  if (S.screen === 'result' && (e.key === 'Enter' || e.key === ' ')) begin();
 });
 
 function hitTest(u, v, source) {

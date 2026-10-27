@@ -136,6 +136,7 @@ class SettingsIn(BaseModel):
 class SessionStartIn(BaseModel):
     lang: Lang = "en"
     game: Optional[str] = None  # slug or id; omitted = default game
+    player_name: Optional[str] = Field(default=None, max_length=200)  # required when the game asks for a name; cleaned in quiz.start_session
 
 
 class AnswerIn(BaseModel):

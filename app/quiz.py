@@ -1,6 +1,7 @@
 """Quiz engine. Runs on the trusted backend: the correct answer never leaves the server before the answer is final."""
 import json
 import random
+import re
 import uuid
 from datetime import datetime
 
@@ -10,6 +11,20 @@ from .db import game_row, game_settings, now_iso
 from .questions import LANGS, get_options, languages_available, media_url, serialize_question
 
 DUPLICATE_WINDOW_MS = 600
+MAX_NAME_LEN = 40
+_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def clean_player_name(raw) -> str:
+    """Trim, drop control / bidi-override characters, collapse spaces, cap the length. May return ''."""
+    name = _CTRL.sub("", raw or "")
+    return re.sub(r"\s+", " ", name).strip()[:MAX_NAME_LEN].strip()
+
+
+def needed_to_win(settings: dict, total: int) -> int:
+    """Correct answers needed to win; 0 = this game has no win/lose. Never more than the questions in the round."""
+    n = int(settings.get("win_correct_needed") or 0)
+    return min(n, total) if n > 0 else 0
 
 
 def eligible_questions(conn, lang: str, game_id: int):
@@ -52,7 +67,7 @@ def _snapshot_question(conn, q, lang, randomize_options) -> dict:
     }
 
 
-def start_session(conn, lang: str, game_key=None) -> dict:
+def start_session(conn, lang: str, game_key=None, player_name=None) -> dict:
     if lang not in LANGS:
         raise HTTPException(422, "Unsupported language")
     game = game_row(conn, game_key)
@@ -61,6 +76,11 @@ def start_session(conn, lang: str, game_key=None) -> dict:
     s = game_settings(conn, game)
     if lang not in s["enabled_languages"]:
         raise HTTPException(422, "This language is not enabled")
+    name = clean_player_name(player_name)
+    if s.get("ask_player_name") and not name:
+        raise HTTPException(422, "Please enter your name")
+    if not s.get("ask_player_name"):
+        name = ""   # a game that does not ask for names never stores one
     pool = eligible_questions(conn, lang, game["id"])
     if not pool:
         raise HTTPException(409, "No published questions are available for this game in this language yet")
@@ -71,9 +91,10 @@ def start_session(conn, lang: str, game_key=None) -> dict:
         pool = pool[:n]
     snap = [_snapshot_question(conn, q, lang, s["randomize_options"]) for q in pool]
     sid = uuid.uuid4().hex
-    conn.execute("INSERT INTO game_sessions(id,lang,started_at,total_questions,snapshot,settings_snapshot,game_id) VALUES(?,?,?,?,?,?,?)",
-                 (sid, lang, now_iso(), len(snap), json.dumps(snap, ensure_ascii=False), json.dumps(s, ensure_ascii=False), game["id"]))
-    return {"session_id": sid, "total": len(snap), "lang": lang, "game": game["slug"]}
+    conn.execute("INSERT INTO game_sessions(id,lang,started_at,total_questions,snapshot,settings_snapshot,game_id,player_name) VALUES(?,?,?,?,?,?,?,?)",
+                 (sid, lang, now_iso(), len(snap), json.dumps(snap, ensure_ascii=False), json.dumps(s, ensure_ascii=False), game["id"], name or None))
+    return {"session_id": sid, "total": len(snap), "lang": lang, "game": game["slug"], "player_name": name or None,
+            "needed_to_win": needed_to_win(s, len(snap))}
 
 
 def _session(conn, sid):
@@ -177,8 +198,10 @@ def submit_answer(conn, sid: str, question_id: int, option_id: int, input_source
 
         idx = row["current_index"] + (1 if final else 0)
         finished = final and idx >= len(snap)
-        conn.execute("UPDATE game_sessions SET score=?, correct_count=?, current_index=?, finished_at=? WHERE id=?",
-                     (new_score, correct_count, idx, now_iso() if finished else None, sid))
+        need = needed_to_win(settings, len(snap))
+        outcome = ("win" if correct_count >= need else "lose") if (finished and need) else None
+        conn.execute("UPDATE game_sessions SET score=?, correct_count=?, current_index=?, finished_at=?, outcome=? WHERE id=?",
+                     (new_score, correct_count, idx, now_iso() if finished else None, outcome, sid))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -223,8 +246,10 @@ def submit_timeout(conn, sid: str, question_id: int):
              "timeout", settings["answer_time_limit_ms"], now_iso()))
         idx = row["current_index"] + 1
         finished = idx >= len(snap)
-        conn.execute("UPDATE game_sessions SET score=?, current_index=?, finished_at=? WHERE id=?",
-                     (new_score, idx, now_iso() if finished else None, sid))
+        need = needed_to_win(settings, len(snap))
+        outcome = ("win" if row["correct_count"] >= need else "lose") if (finished and need) else None
+        conn.execute("UPDATE game_sessions SET score=?, current_index=?, finished_at=?, outcome=? WHERE id=?",
+                     (new_score, idx, now_iso() if finished else None, outcome, sid))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -244,5 +269,8 @@ def get_result(conn, sid: str) -> dict:
     tier = "perfect" if total and row["correct_count"] == total else ("high" if pct >= s["high_score_percent"] else "normal")
     won = {r["question_id"] for r in conn.execute("SELECT question_id FROM game_responses WHERE session_id=? AND is_correct=1", (sid,))}
     prizes = [q["prize"] for q in snap if q["question_id"] in won and q.get("prize")]
+    need = needed_to_win(s, total)
+    outcome = row["outcome"] or (("win" if row["correct_count"] >= need else "lose") if (need and row["finished_at"]) else None)
     return {"prizes": prizes, "finished": bool(row["finished_at"]), "score": row["score"], "max_score": max_score, "correct": row["correct_count"],
-            "attempted": attempted, "total": total, "percent": pct, "tier": tier, "lang": row["lang"]}
+            "attempted": attempted, "total": total, "percent": pct, "tier": tier, "lang": row["lang"],
+            "player_name": row["player_name"], "needed_to_win": need, "outcome": outcome}

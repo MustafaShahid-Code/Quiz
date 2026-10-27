@@ -8,7 +8,7 @@ from ..security import ensure_game, game_clause, require_admin, require_editor, 
 router = APIRouter(prefix="/api/admin", tags=["settings"])
 
 RANGES = {
-    "questions_per_session": (0, 50), "retries_per_question": (0, 3), "retry_points_fraction": (0, 1),
+    "questions_per_session": (0, 50), "win_correct_needed": (0, 50), "retries_per_question": (0, 3), "retry_points_fraction": (0, 1),
     "points_correct": (0, 1000), "points_incorrect": (-1000, 1000), "high_score_percent": (1, 100),
     "auto_advance_delay_ms": (1000, 30000), "confirm_delay_ms": (500, 15000), "answer_time_limit_ms": (2000, 120000), "idle_reset_seconds": (0, 3600),
     "branding_default_duration_ms": (1500, 60000), "vault_prize_hold_ms": (2000, 60000),
@@ -134,7 +134,7 @@ def list_sessions(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, l
         conds.append("game_id=?"); args.append(game_id)
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
     total = conn.execute(f"SELECT COUNT(*) FROM game_sessions {where}", args).fetchone()[0]
-    rows = conn.execute(f"""SELECT id, lang, started_at, finished_at, score, correct_count, total_questions,
+    rows = conn.execute(f"""SELECT id, lang, started_at, finished_at, score, correct_count, total_questions, player_name, outcome,
         (SELECT name_en FROM games g WHERE g.id=game_sessions.game_id) game_name,
         (SELECT group_concat(DISTINCT input_source) FROM game_responses r WHERE r.session_id=game_sessions.id) sources
         FROM game_sessions {where} ORDER BY started_at DESC LIMIT ? OFFSET ?""", args + [page_size, (page - 1) * page_size]).fetchall()
@@ -143,7 +143,7 @@ def list_sessions(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, l
 
 @router.get("/sessions/{sid}")
 def session_detail(sid: str, user=Depends(require_viewer), conn=Depends(get_db)):
-    s = conn.execute("SELECT id, game_id, lang, started_at, finished_at, score, correct_count, total_questions FROM game_sessions WHERE id=?", (sid,)).fetchone()
+    s = conn.execute("SELECT id, game_id, lang, started_at, finished_at, score, correct_count, total_questions, player_name, outcome FROM game_sessions WHERE id=?", (sid,)).fetchone()
     if not s:
         raise HTTPException(404, "Session not found")
     ensure_game(conn, user, s["game_id"])

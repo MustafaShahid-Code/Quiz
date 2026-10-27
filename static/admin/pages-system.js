@@ -50,8 +50,9 @@ FQ.pages.results = async (main) => {
   const box = h('div', { class: 'panel tbl-wrap' });
   const load = async () => {
     const r = await FQ.api(`/sessions?page=${page}&page_size=20&lang=${lang}${gameId ? '&game_id=' + gameId : ''}`); const pages = Math.max(1, Math.ceil(r.total / r.page_size));
-    box.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, ['Started', 'Game', 'Language', 'Score', 'Correct', 'Input', 'Finished', ''].map(x => h('th', {}, x)))),
-      h('tbody', {}, r.items.map(s => h('tr', {}, h('td', {}, FQ.fmtDate(s.started_at)), h('td', {}, s.game_name || '—'), h('td', {}, s.lang), h('td', {}, s.score), h('td', {}, `${s.correct_count} / ${s.total_questions}`),
+    box.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, ['Started', 'Game', 'Player', 'Language', 'Score', 'Correct', 'Result', 'Input', 'Finished', ''].map(x => h('th', {}, x)))),
+      h('tbody', {}, r.items.map(s => h('tr', {}, h('td', {}, FQ.fmtDate(s.started_at)), h('td', {}, s.game_name || '—'), h('td', {}, s.player_name || '—'), h('td', {}, s.lang), h('td', {}, s.score), h('td', {}, `${s.correct_count} / ${s.total_questions}`),
+        h('td', {}, s.outcome ? FQ.badge(s.outcome === 'win' ? 'WIN' : 'LOSE', s.outcome === 'win' ? 'ok' : 'bad') : '—'),
         h('td', {}, (s.sources || '').split(',').filter(Boolean).map(x => FQ.badge(x, x === 'simulated' ? 'sim' : ''))), h('td', {}, s.finished_at ? FQ.badge('yes', 'ok') : FQ.badge('abandoned', 'off')),
         h('td', { class: 'actions' }, h('button', { class: 'btn small', onclick: () => detail(s.id) }, 'Details')))))),
       r.items.length ? '' : h('p', { class: 'muted' }, 'No games played yet.'),
@@ -59,7 +60,7 @@ FQ.pages.results = async (main) => {
   };
   const detail = async (id) => {
     const d = await FQ.api('/sessions/' + id).catch(FQ.fail); if (!d) return;
-    FQ.modal({ title: 'Game details', width: 900, body: [h('p', {}, `Score ${d.score} · ${d.correct_count}/${d.total_questions} correct · ${d.lang}`),
+    FQ.modal({ title: 'Game details', width: 900, body: [h('p', {}, `${d.player_name ? 'Player: ' + d.player_name + ' · ' : ''}Score ${d.score} · ${d.correct_count}/${d.total_questions} correct · ${d.lang}${d.outcome ? ' · ' + d.outcome.toUpperCase() : ''}`),
       h('table', {}, h('thead', {}, h('tr', {}, ['#', 'Question', 'Answer', 'Result', 'Prize', 'Attempt', 'Input'].map(x => h('th', {}, x)))),
         h('tbody', {}, d.responses.map((r, i) => h('tr', {}, h('td', {}, i + 1), h('td', {}, r.question_text), h('td', {}, r.selected_text || '—'), h('td', {}, FQ.badge(r.is_correct ? 'correct' : 'wrong', r.is_correct ? 'ok' : 'bad')), h('td', {}, r.prize_name || '—'), h('td', {}, r.attempt_no), h('td', {}, FQ.badge(r.input_source, r.input_source === 'simulated' ? 'sim' : ''))))))] });
   };

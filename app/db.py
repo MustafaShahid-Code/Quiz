@@ -202,6 +202,10 @@ ALTER TABLE questions ADD COLUMN prize_description_ar TEXT NOT NULL DEFAULT '';
 ALTER TABLE questions ADD COLUMN prize_asset_id INTEGER REFERENCES media_assets(id) ON DELETE SET NULL;
 ALTER TABLE game_responses ADD COLUMN prize_name TEXT
 """),
+    (8, "player name and win/lose outcome on sessions", """
+ALTER TABLE game_sessions ADD COLUMN player_name TEXT;
+ALTER TABLE game_sessions ADD COLUMN outcome TEXT
+"""),
 ]
 
 
@@ -274,6 +278,15 @@ DEFAULT_SETTINGS = {
     "auto_advance": True, "auto_advance_delay_ms": 4500, "show_explanations": True,
     # after a wrong answer: highlight the right option (and explain)? Off = the player only sees that they were wrong
     "show_correct_on_wrong": True,
+    # challenge mode: ask the player's name, and (when win_correct_needed > 0) finish with WIN / LOSE
+    "ask_player_name": False,
+    "name_prompt_en": "Enter your name", "name_prompt_ar": "أدخل اسمك",
+    "name_button_en": "Let's play", "name_button_ar": "هيا نلعب",
+    "win_correct_needed": 0,
+    "win_title_en": "YOU WIN!", "win_title_ar": "لقد فزت!",
+    "win_message_en": "Great guessing!", "win_message_ar": "تخمين رائع!",
+    "lose_title_en": "YOU LOSE", "lose_title_ar": "لقد خسرت",
+    "lose_message_en": "Better luck next time!", "lose_message_ar": "حظاً أوفر في المرة القادمة!",
     "sound_enabled": True, "idle_reset_seconds": 60, "show_touch_cursor": True,
     "correct_title_en": "CORRECT ANSWER!", "correct_title_ar": "إجابة صحيحة!",
     "correct_messages_en": ["GOOOAL! ⚽ Great answer! 🎯", "What a finish! ⚽"],
@@ -379,6 +392,8 @@ GAME_OVERRIDE_KEYS = [
     "questions_per_session", "randomize_questions", "randomize_options", "retries_per_question", "retry_points_fraction",
     "points_correct", "points_incorrect", "answer_timer_enabled", "answer_time_limit_ms",
     "confirm_enabled", "confirm_delay_ms", "auto_advance", "auto_advance_delay_ms", "show_explanations", "show_correct_on_wrong",
+    "ask_player_name", "name_prompt_en", "name_prompt_ar", "name_button_en", "name_button_ar", "win_correct_needed",
+    "win_title_en", "win_title_ar", "win_message_en", "win_message_ar", "lose_title_en", "lose_title_ar", "lose_message_en", "lose_message_ar",
     "high_score_percent", "vault_win_title_en", "vault_win_title_ar", "vault_lose_message_en", "vault_lose_message_ar",
     "vault_prize_hold_ms", "vault_prizes_title_en", "vault_prizes_title_ar", "branding_enabled", "branding_use_shared_slides", "branding_hint_en", "branding_hint_ar",
 ]

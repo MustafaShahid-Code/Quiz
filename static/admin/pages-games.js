@@ -30,6 +30,14 @@ const OVERRIDES = [
     ['answer_timer_enabled', 'Answer countdown on', 'bool'], ['answer_time_limit_ms', 'Seconds to answer', 'sec'],
     ['points_correct', 'Points per correct answer', 'num'], ['show_explanations', 'Show explanations', 'bool'],
     ['show_correct_on_wrong', 'After a wrong answer, show which one was right', 'bool']]],
+  ['Challenge: player name and WIN / LOSE', [
+    ['ask_player_name', 'Ask for the player’s name before the round', 'bool'], ['win_correct_needed', 'Correct answers needed to WIN (0 = no win/lose)', 'num'],
+    ['name_prompt_en', 'Name screen heading (English)', 'text'], ['name_prompt_ar', 'Name screen heading (Arabic)', 'text', 'rtl'],
+    ['name_button_en', 'Name screen button (English)', 'text'], ['name_button_ar', 'Name screen button (Arabic)', 'text', 'rtl'],
+    ['win_title_en', 'Win title (English)', 'text'], ['win_title_ar', 'Win title (Arabic)', 'text', 'rtl'],
+    ['win_message_en', 'Win message (English)', 'text'], ['win_message_ar', 'Win message (Arabic)', 'text', 'rtl'],
+    ['lose_title_en', 'Lose title (English)', 'text'], ['lose_title_ar', 'Lose title (Arabic)', 'text', 'rtl'],
+    ['lose_message_en', 'Lose message (English)', 'text'], ['lose_message_ar', 'Lose message (Arabic)', 'text', 'rtl']]],
 ];
 
 FQ.pages.games = async (main) => {

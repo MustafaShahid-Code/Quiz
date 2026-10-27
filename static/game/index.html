@@ -61,6 +61,18 @@
       </div>
     </section>
 
+    <section id="screen-name" class="screen" hidden>
+      <div id="nameBox">
+        <div id="nameIcon" aria-hidden="true">⚽</div>
+        <h2 id="namePrompt"></h2>
+        <p id="nameRule"></p>
+        <input id="nameInput" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="go">
+        <div id="nameErr" role="alert"></div>
+        <button id="nameBtn" class="btn big" type="button"></button>
+        <button id="nameBack" class="btn small ghost" type="button"></button>
+      </div>
+    </section>
+
     <section id="screen-games" class="screen" hidden>
       <div id="gameCards"></div>
     </section>
@@ -109,10 +121,12 @@
 
     <!-- RESULT -->
     <section id="screen-result" class="screen" hidden>
+      <div id="resName"></div>
       <div id="trophy"></div>
       <h2 id="resTitle"></h2>
       <div id="resScore"></div>
       <div id="resLine"></div>
+      <div id="resMsg"></div>
       <div id="prizeList"></div>
       <div id="resButtons">
         <button class="btn big" data-action="again" type="button" id="againBtn"></button>
