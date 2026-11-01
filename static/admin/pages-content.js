@@ -227,7 +227,7 @@ FQ.pages.assets = async (main) => {
     if (!list.length) box.append(h('p', { class: 'muted' }, 'The library is empty.'));
   };
   const up = h('input', { type: 'file', multiple: true, accept: 'image/*,.woff2,.woff,.ttf,.otf', hidden: true, onchange: async (e) => {
-    for (const file of e.target.files) { const fd = new FormData(); fd.append('file', file); try { await FQ.api('/assets', { method: 'POST', body: fd }); } catch (x) { FQ.toast(`${file.name}: ${x.message}`, 'bad'); } } load(); } });
+    for (const file of e.target.files) { const note = h('div', { class: 'toast' }, `Uploading ${file.name}…`); FQ.$('#toasts').appendChild(note); try { await FQ.upload(file, (r) => { note.textContent = `Uploading ${file.name} ${Math.round(r * 100)}%`; }); note.textContent = `${file.name} uploaded`; } catch (x) { note.remove(); FQ.toast(`${file.name}: ${x.message}`, 'bad'); } setTimeout(() => note.remove(), 2500); } load(); } });
   main.append(h('div', { class: 'head' }, h('h1', {}, 'Media library'), FQ.can('editor') ? h('div', {}, up, h('button', { class: 'btn primary', onclick: () => up.click() }, '+ Upload files')) : null),
     h('p', { class: 'muted' }, 'PNG, JPEG, WebP, GIF, SVG and WOFF2/WOFF/TTF/OTF fonts up to 8 MB. Files are checked by content, not by file name.'),
     h('div', { class: 'row', style: { marginBottom: '12px' } }, FQ.select([['', 'All files'], ['image', 'Images'], ['font', 'Fonts']], '', { style: { width: 'auto' }, onchange: (e) => { kind = e.target.value; load(); } })), box);

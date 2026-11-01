@@ -187,3 +187,8 @@ html { scrollbar-gutter:stable; }
 
 .game-card .btn { white-space: nowrap; }
 .game-card .rtl { text-align: start; }
+
+/* upload progress (asset picker) */
+.upprog { width:100%; margin-top:10px; } .uptrack { height:8px; background:#e3e8f7; border-radius:99px; overflow:hidden; margin-bottom:6px; }
+.upbar { height:100%; width:0; background:var(--primary); border-radius:99px; transition:width .15s linear; }
+.btn:disabled { opacity:.65; cursor:progress; }

@@ -79,6 +79,27 @@ FQ.menu = function menu(label, items) {
   return wrap;
 };
 
+/* ---------- upload with progress (fetch cannot report upload progress) */
+FQ.upload = function upload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData(); fd.append('file', file);
+    const x = new XMLHttpRequest(); x.open('POST', '/api/admin/assets');
+    if (FQ.token()) x.setRequestHeader('Authorization', 'Bearer ' + FQ.token());
+    x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let d = null; try { d = JSON.parse(x.responseText); } catch (e) { /* empty */ }
+      if (x.status === 401) { FQ.logout(); return reject(new Error('Session expired')); }
+      if (x.status >= 200 && x.status < 300) return resolve(d);
+      const det = d && d.detail; let msg = typeof det === 'string' ? det : '';
+      if (!msg && x.status === 413) msg = 'File too large (max 8 MB). Please compress or resize the image.';
+      reject(new Error(msg || `Upload failed (HTTP ${x.status})`));
+    };
+    x.onerror = () => reject(new Error('Network error: the upload did not reach the server'));
+    x.ontimeout = () => reject(new Error('Upload timed out'));
+    x.timeout = 300000; x.send(fd);
+  });
+};
+
 /* ---------- asset picker (thumbnail + choose / upload / clear) */
 FQ.assetPicker = function assetPicker({ value, kind = 'image', onChange, label = 'Image' }) {
   const state = { id: value || null, url: null };
@@ -91,10 +112,21 @@ FQ.assetPicker = function assetPicker({ value, kind = 'image', onChange, label =
   const open = async () => {
     const list = await FQ.api('/assets?kind=' + kind).catch(FQ.fail); if (!list) return;
     const grid = h('div', { class: 'picker-grid' });
-    const m = FQ.modal({ title: 'Choose a file', width: 760, body: [FQ.can('editor') ? h('div', { class: 'row', style: { marginBottom: '12px' } }, h('input', { type: 'file', accept: kind === 'font' ? '.woff2,.woff,.ttf,.otf' : 'image/*', id: 'pickUp' }),
-        h('button', { class: 'btn primary small', type: 'button', onclick: async () => {
-          const f = FQ.$('#pickUp').files[0]; if (!f) return; const fd = new FormData(); fd.append('file', f);
-          try { const a = await FQ.api('/assets', { method: 'POST', body: fd }); m.close(); set(a); FQ.toast('Uploaded', 'ok'); } catch (e) { FQ.fail(e); } } }, 'Upload & use')) : null, grid] });
+    const fileIn = h('input', { type: 'file', accept: kind === 'font' ? '.woff2,.woff,.ttf,.otf' : 'image/*' });
+    const bar = h('div', { class: 'upbar' }); const txt = h('div', { class: 'muted' });
+    const prog = h('div', { class: 'upprog', hidden: true }, h('div', { class: 'uptrack' }, bar), txt);
+    const m = FQ.modal({ title: 'Choose a file', width: 760, body: [FQ.can('editor') ? h('div', { class: 'row', style: { marginBottom: '12px' } }, fileIn,
+        h('button', { class: 'btn primary small', type: 'button', onclick: async (ev) => {
+          const btn = ev.currentTarget; const f = fileIn.files[0];
+          if (!f) { FQ.toast('Choose a file first', 'bad'); return; }
+          if (f.size > 8 * 1024 * 1024) { FQ.toast(`${f.name} is ${(f.size / 1048576).toFixed(1)} MB. The limit is 8 MB, please compress it first.`, 'bad'); return; }
+          btn.disabled = true; fileIn.disabled = true; prog.hidden = false; const label = btn.textContent;
+          const mb = (f.size / 1048576).toFixed(1) + ' MB';
+          const upd = (r) => { const pct = Math.round(r * 100); bar.style.width = pct + '%'; btn.textContent = r >= 1 ? 'Processing…' : `Uploading ${pct}%`; txt.textContent = r >= 1 ? 'Upload complete, processing the image…' : `Uploading ${f.name} (${mb}) ${pct}%`; };
+          upd(0);
+          try { const a = await FQ.upload(f, upd); m.close(); set(a); FQ.toast('Uploaded', 'ok'); }
+          catch (e) { FQ.fail(e); btn.disabled = false; fileIn.disabled = false; btn.textContent = label; prog.hidden = true; } } }, 'Upload & use'),
+        prog) : null, grid] });
     list.forEach(a => grid.appendChild(h('div', { class: 'it', title: a.original_name || '', onclick: () => { m.close(); set(a); } },
       kind === 'font' ? h('b', {}, a.original_name || 'font') : h('img', { src: a.url, alt: '' }))));
     if (!list.length) grid.appendChild(h('p', { class: 'muted' }, 'Nothing uploaded yet.'));
