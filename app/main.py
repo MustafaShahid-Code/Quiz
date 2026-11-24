@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, db, seed
 from .hub import Hub
-from .routers import auth, content, game, games, media, sensor, settings
+from .routers import auth, content, game, games, importer, media, ops, relay, sensor, settings
 from .sensor.service import SensorService
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -59,7 +59,7 @@ def create_app(start_sensor: bool = True, sensor_factory=None) -> FastAPI:
             resp.headers.setdefault("Cache-Control", "no-store")
         return resp
 
-    for r in (auth.router, content.router, media.router, settings.router, sensor.router, games.router, game.router):
+    for r in (auth.router, content.router, media.router, settings.router, sensor.router, games.router, ops.router, importer.router, relay.router, game.router):
         app.include_router(r)
 
     @app.get("/favicon.ico", include_in_schema=False)

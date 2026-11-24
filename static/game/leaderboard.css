@@ -1,0 +1,21 @@
+/* Live leaderboard for a big screen: looks like the game (same theme variables), auto-refreshes. */
+#lb { padding:0; }
+#lbTitle { position:absolute; top:200px; left:0; right:0; margin:0; text-align:center; font-size:60px; font-weight:800; color:var(--burst-bg); }
+#lbCols { position:absolute; top:290px; left:90px; right:90px; display:grid; grid-template-columns:1fr 1fr; gap:60px; }
+#lbCols.single { grid-template-columns:1fr; max-width:1000px; margin:0 auto; left:0; right:0; }
+.lbcol h3 { margin:0 0 14px; font-size:36px; color:var(--text-muted); font-weight:700; text-align:center; letter-spacing:.04em; }
+.lbcol ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+.lbcol li { display:flex; align-items:center; gap:18px; height:66px; padding:0 22px; border-radius:var(--card-radius); background:rgba(255,255,255,.1); border:2px solid color-mix(in srgb, var(--text) 18%, transparent);
+  font-size:34px; animation:fadein .5s both; }
+.lbcol li .rank { width:56px; text-align:center; font-weight:800; font-size:36px; color:var(--text-muted); }
+.lbcol li:nth-child(1) .rank { color:#ffd814; } .lbcol li:nth-child(2) .rank { color:#cfd6e4; } .lbcol li:nth-child(3) .rank { color:#e0a070; }
+.lbcol li .nm { flex:1; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.lbcol li .sc { direction:ltr; unicode-bidi:isolate; font-weight:800; color:var(--burst-bg); font-size:36px; }
+.lbcol li .sub { direction:ltr; unicode-bidi:isolate; font-size:26px; color:var(--text-muted); }
+.lbcol li.win { border-color:color-mix(in srgb, var(--correct) 70%, transparent); }
+.lbcol li.win .tag { background:var(--correct); color:#04210f; font-size:22px; font-weight:800; padding:4px 12px; border-radius:30px; }
+.lbcol li.empty { justify-content:center; color:var(--text-muted); font-size:28px; background:transparent; border-style:dashed; }
+#lbStats { position:absolute; bottom:46px; left:0; right:0; text-align:center; font-size:32px; color:var(--text-muted); }
+#lbStats b { color:var(--text); }
+#lbOff p { position:absolute; top:420px; left:0; right:0; text-align:center; font-size:44px; color:var(--text-muted); }
+#lbLock .btn { margin-top:6px; }

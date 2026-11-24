@@ -192,3 +192,14 @@ html { scrollbar-gutter:stable; }
 .upprog { width:100%; margin-top:10px; } .uptrack { height:8px; background:#e3e8f7; border-radius:99px; overflow:hidden; margin-bottom:6px; }
 .upbar { height:100%; width:0; background:var(--primary); border-radius:99px; transition:width .15s linear; }
 .btn:disabled { opacity:.65; cursor:progress; }
+
+/* ---- event tools: import wizard, claims, system card */
+.ok-txt { color:#127a43; } .bad-txt { color:#b42318; }
+.imp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px 18px; margin-top:10px; }
+.imp-table { max-height:300px; overflow:auto; margin-top:8px; border:1px solid #e3e8f7; border-radius:10px; } .imp-table td, .imp-table th { font-size:13px; vertical-align:top; }
+.imp-problems { color:#b42318; margin:6px 0 0 18px; padding:0; } .imp-done { background:#eaf8f0; border-radius:12px; padding:14px 18px; margin-top:10px; } .imp-done h3 { margin:0 0 6px; color:#127a43; }
+.claim-box .row { gap:10px; } .claim-input { font-size:30px; letter-spacing:.18em; text-transform:uppercase; max-width:300px; text-align:center; font-weight:800; }
+.claim-result { margin-top:16px; } .claim-card { border-radius:14px; padding:18px 22px; border:2px solid #e3e8f7; } .claim-card.ready { border-color:#27a862; background:#f1fbf5; } .claim-card.done { border-color:#e0a100; background:#fff9e8; } .claim-card.bad { border-color:#d92d20; background:#fff1f0; }
+.claim-code { font-size:38px; font-weight:900; letter-spacing:.2em; } .btn.big { padding:12px 22px; font-size:17px; }
+.sys-row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid #eef1fa; }
+.bars.hours { height:140px; gap:3px; } .bars.hours .bar span { font-size:10px; }

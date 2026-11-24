@@ -27,7 +27,7 @@ def active_config_row(conn):
     if not row:
         ts = now_iso()
         default = "simulator" if config.is_dev() else "none"
-        params = {"port": "/dev/ttyUSB0", "baudrate": 1000000, "command": "", "path": "", "input_key": secrets.token_urlsafe(24)}
+        params = {"port": "/dev/ttyUSB0", "baudrate": 1000000, "command": "", "path": "", "input_key": secrets.token_urlsafe(24), "relay_key": secrets.token_urlsafe(24)}
         cur = conn.execute("INSERT INTO sensor_configs(name,active,sensor_model,source_type,params,thresholds,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
                            ("Default", 1, "S2", default, json.dumps(params), json.dumps(ProcessorConfig().__dict__), ts, ts))
         row = conn.execute("SELECT * FROM sensor_configs WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -49,6 +49,7 @@ def _row_dict(r, admin=False):
     params = json.loads(r["params"] or "{}")
     if not admin:
         params.pop("input_key", None)
+        params.pop("relay_key", None)
     cal = json.loads(r["calibration"] or "{}")
     return {"id": r["id"], "name": r["name"], "sensor_model": r["sensor_model"], "source_type": r["source_type"],
             "params": params, "thresholds": {**ProcessorConfig().__dict__, **json.loads(r["thresholds"] or "{}")},
@@ -76,13 +77,19 @@ def status(request: Request, _=Depends(require_viewer), conn=Depends(get_db)):
         Hinv = np.linalg.inv(np.array(cal["homography"]))
         quad = [list(apply_homography(Hinv, u, v)) for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))]
     return {**svc.status(), "screen_quad_mm": quad, "calibration_rmse": cal.get("rmse"),
-            "hardware_note": None if svc.source_type in ("serial", "subprocess") else
+            "hardware_note": None if svc.source_type in ("serial", "subprocess", "remote") else
             "Not using real hardware: touches are simulated or the sensor is disabled."}
 
 
 @router.get("/config")
 def get_config(user=Depends(require_viewer), conn=Depends(get_db)):
-    d = _row_dict(active_config_row(conn), admin=user["role"] == "admin")
+    r = active_config_row(conn)
+    p = json.loads(r["params"] or "{}")
+    if not p.get("relay_key"):
+        p["relay_key"] = secrets.token_urlsafe(24)
+        _save(conn, r["id"], params=json.dumps(p))
+        r = active_config_row(conn)
+    d = _row_dict(r, admin=user["role"] == "admin")
     d["subprocess_allowed"] = subprocess_allowed()
     d["validation_limits"] = VALIDATION_LIMITS
     return d
@@ -106,7 +113,7 @@ def put_config(body: SensorConfigIn, request: Request, _=Depends(require_admin),
         cols["source_type"] = body.source_type
     if body.params is not None:
         old = json.loads(r["params"] or "{}")
-        p = {**old, **{k: v for k, v in body.params.items() if k != "input_key"}}
+        p = {**old, **{k: v for k, v in body.params.items() if k not in ("input_key", "relay_key")}}
         if not isinstance(p.get("baudrate", 0), int) or p.get("baudrate", 0) < 0:
             raise HTTPException(422, "baudrate must be a whole number")
         for k in ("port", "command", "path"):
@@ -147,6 +154,25 @@ def restart(request: Request, _=Depends(require_admin)):
     return {"ok": True}
 
 
+@router.post("/relay-key/rotate")
+def rotate_relay_key(request: Request, _=Depends(require_admin), conn=Depends(get_db)):
+    """New key for the on-site relay. The old one stops working immediately (the connected relay is dropped)."""
+    r = active_config_row(conn)
+    p = json.loads(r["params"] or "{}")
+    p["relay_key"] = secrets.token_urlsafe(24)
+    _save(conn, r["id"], params=json.dumps(p))
+    old = getattr(request.app.state, "relay_ws", None)
+    if old is not None:
+        import asyncio
+        asyncio.get_running_loop().create_task(old.close(code=4401))
+    return {"relay_key": p["relay_key"]}
+
+
+@router.get("/relay-probe")
+def relay_probe(request: Request, _=Depends(require_admin)):
+    return _svc(request).relay_probe or {"at": None, "report": None}
+
+
 @router.post("/input-key/rotate")
 def rotate_input_key(_=Depends(require_admin), conn=Depends(get_db)):
     r = active_config_row(conn)
@@ -165,6 +191,25 @@ def capture(request: Request, _=Depends(require_admin)):
     except SensorError as e:
         raise HTTPException(409, str(e))
     return {"x_mm": x, "y_mm": y}
+
+
+@router.post("/calibration/show")
+async def show_target(body: dict, request: Request, _=Depends(require_admin)):
+    """Show (or hide) a calibration / test target on every open game screen, so the projector can be driven remotely."""
+    action = body.get("action")
+    if action not in ("show", "hide", "end"):
+        raise HTTPException(422, "action must be show, hide or end")
+    msg = {"type": "calib", "action": action, "title": str(body.get("title", ""))[:120]}
+    if action == "show":
+        try:
+            u, v = float(body["u"]), float(body["v"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(422, "u and v are required")
+        if not (0 <= u <= 1 and 0 <= v <= 1):
+            raise HTTPException(422, "u and v must be between 0 and 1")
+        msg.update({"u": u, "v": v})
+    await request.app.state.input_hub.broadcast(msg)
+    return {"ok": True, "screens": request.app.state.input_hub.count()}
 
 
 @router.post("/calibration")
@@ -244,7 +289,7 @@ def save_validation(body: ValidationIn, request: Request, _=Depends(require_admi
     r = active_config_row(conn)
     _save(conn, r["id"], validation=json.dumps(m))
     svc.cfg["validation"] = m
-    return {**m, "validated_hardware": m["passed"] and svc.source_type in ("serial", "subprocess")}
+    return {**m, "validated_hardware": m["passed"] and svc.source_type in ("serial", "subprocess", "remote")}
 
 
 # ------------------------------------------------------------------ development helpers & diagnostics

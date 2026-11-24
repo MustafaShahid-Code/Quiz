@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Leaderboard</title>
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="stylesheet" href="game.css">
+<link rel="stylesheet" href="leaderboard.css">
+<style id="theme-font"></style>
+</head>
+<body>
+<div id="viewport" data-btn="solid">
+  <div id="bg"></div><div id="bg-overlay"></div>
+  <div id="stage">
+    <header id="brandbar">
+      <img id="logoLeft" alt="" hidden>
+      <div id="titlewrap"><h1 id="title"></h1><div id="accent"></div></div>
+      <img id="logoRight" alt="" hidden>
+    </header>
+    <section id="lb" class="screen" hidden>
+      <h2 id="lbTitle"></h2>
+      <div id="lbCols">
+        <div class="lbcol"><h3 id="topHead"></h3><ol id="topList"></ol></div>
+        <div class="lbcol" id="winCol"><h3 id="winHead"></h3><ol id="winList"></ol></div>
+      </div>
+      <div id="lbStats"></div>
+    </section>
+    <section id="lbLock" class="screen" hidden>
+      <div id="lockBox">
+        <div id="lockIcon" aria-hidden="true">🔒</div>
+        <h2 id="lockName"></h2>
+        <input id="lockInput" type="password" autocomplete="off" maxlength="128" placeholder="Password">
+        <div id="lockErr" role="alert"></div>
+        <button id="lockBtn" class="btn big" type="button">Unlock</button>
+      </div>
+    </section>
+    <section id="lbOff" class="screen" hidden><p id="offMsg"></p></section>
+  </div>
+</div>
+<script src="leaderboard.js" defer></script>
+</body>
+</html>

@@ -21,6 +21,44 @@ def clean_player_name(raw) -> str:
     return re.sub(r"\s+", " ", name).strip()[:MAX_NAME_LEN].strip()
 
 
+CLAIM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # no 0/O, 1/I/L: easy to read out loud and type
+CLAIM_LEN = 6
+
+
+def new_claim_code(conn) -> str:
+    for _ in range(30):
+        code = "".join(random.SystemRandom().choice(CLAIM_ALPHABET) for _ in range(CLAIM_LEN))
+        if not conn.execute("SELECT 1 FROM game_sessions WHERE claim_code=?", (code,)).fetchone():
+            return code
+    raise HTTPException(500, "Could not create a claim code")
+
+
+def normalize_claim_code(raw) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (raw or "").upper())
+
+
+def format_claim_code(code):
+    return f"{code[:3]}-{code[3:]}" if code else None
+
+
+def pick_questions(conn, game_id: int, pool: list, n: int, settings: dict) -> list:
+    """Choose the round's questions. When the game has more questions than a round needs, the ones played least recently come
+    first, so people queueing at a booth do not all get the same few questions."""
+    if n and 0 < n < len(pool) and settings.get("avoid_repeat_questions", True):
+        last = {r["question_id"]: r["m"] for r in conn.execute(
+            "SELECT question_id, MAX(served_at) m FROM question_serves WHERE game_id=? GROUP BY question_id", (game_id,))}
+        ranked = sorted(pool, key=lambda q: (last.get(q["id"], ""), random.random()))   # never played = "" = first
+        chosen = ranked[:n]
+        if settings["randomize_questions"]:
+            random.shuffle(chosen)
+        else:
+            chosen.sort(key=lambda q: (q["sort_order"], q["id"]))
+        return chosen
+    if settings["randomize_questions"]:
+        pool = list(pool); random.shuffle(pool)
+    return pool[:n] if n and n > 0 else pool
+
+
 def needed_to_win(settings: dict, total: int) -> int:
     """Correct answers needed to win; 0 = this game has no win/lose. Never more than the questions in the round."""
     n = int(settings.get("win_correct_needed") or 0)
@@ -84,15 +122,13 @@ def start_session(conn, lang: str, game_key=None, player_name=None) -> dict:
     pool = eligible_questions(conn, lang, game["id"])
     if not pool:
         raise HTTPException(409, "No published questions are available for this game in this language yet")
-    if s["randomize_questions"]:
-        random.shuffle(pool)
-    n = s["questions_per_session"]
-    if n and n > 0:
-        pool = pool[:n]
+    pool = pick_questions(conn, game["id"], pool, s["questions_per_session"], s)
     snap = [_snapshot_question(conn, q, lang, s["randomize_options"]) for q in pool]
     sid = uuid.uuid4().hex
     conn.execute("INSERT INTO game_sessions(id,lang,started_at,total_questions,snapshot,settings_snapshot,game_id,player_name) VALUES(?,?,?,?,?,?,?,?)",
                  (sid, lang, now_iso(), len(snap), json.dumps(snap, ensure_ascii=False), json.dumps(s, ensure_ascii=False), game["id"], name or None))
+    served = now_iso()
+    conn.executemany("INSERT INTO question_serves(game_id,question_id,served_at) VALUES(?,?,?)", [(game["id"], q["id"], served) for q in pool])
     return {"session_id": sid, "total": len(snap), "lang": lang, "game": game["slug"], "player_name": name or None,
             "needed_to_win": needed_to_win(s, len(snap))}
 
@@ -200,8 +236,9 @@ def submit_answer(conn, sid: str, question_id: int, option_id: int, input_source
         finished = final and idx >= len(snap)
         need = needed_to_win(settings, len(snap))
         outcome = ("win" if correct_count >= need else "lose") if (finished and need) else None
-        conn.execute("UPDATE game_sessions SET score=?, correct_count=?, current_index=?, finished_at=?, outcome=? WHERE id=?",
-                     (new_score, correct_count, idx, now_iso() if finished else None, outcome, sid))
+        claim = new_claim_code(conn) if (outcome == "win" and settings.get("claim_code_enabled")) else None
+        conn.execute("UPDATE game_sessions SET score=?, correct_count=?, current_index=?, finished_at=?, outcome=?, claim_code=COALESCE(claim_code, ?) WHERE id=?",
+                     (new_score, correct_count, idx, now_iso() if finished else None, outcome, claim, sid))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -248,8 +285,9 @@ def submit_timeout(conn, sid: str, question_id: int):
         finished = idx >= len(snap)
         need = needed_to_win(settings, len(snap))
         outcome = ("win" if row["correct_count"] >= need else "lose") if (finished and need) else None
-        conn.execute("UPDATE game_sessions SET score=?, current_index=?, finished_at=?, outcome=? WHERE id=?",
-                     (new_score, idx, now_iso() if finished else None, outcome, sid))
+        claim = new_claim_code(conn) if (outcome == "win" and settings.get("claim_code_enabled")) else None
+        conn.execute("UPDATE game_sessions SET score=?, current_index=?, finished_at=?, outcome=?, claim_code=COALESCE(claim_code, ?) WHERE id=?",
+                     (new_score, idx, now_iso() if finished else None, outcome, claim, sid))
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
@@ -273,4 +311,6 @@ def get_result(conn, sid: str) -> dict:
     outcome = row["outcome"] or (("win" if row["correct_count"] >= need else "lose") if (need and row["finished_at"]) else None)
     return {"prizes": prizes, "finished": bool(row["finished_at"]), "score": row["score"], "max_score": max_score, "correct": row["correct_count"],
             "attempted": attempted, "total": total, "percent": pct, "tier": tier, "lang": row["lang"],
-            "player_name": row["player_name"], "needed_to_win": need, "outcome": outcome}
+            "player_name": row["player_name"], "needed_to_win": need, "outcome": outcome,
+            "claim_code": format_claim_code(row["claim_code"]) if outcome == "win" else None,
+            "claim_label": (s.get("claim_label_" + row["lang"]) or s.get("claim_label_en")) if row["claim_code"] else None}

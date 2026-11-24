@@ -57,3 +57,8 @@ TOKEN_TTL_HOURS = int(os.environ.get("FQ_TOKEN_TTL_HOURS", "12"))
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 LOGIN_MAX_FAILURES = 5
 LOGIN_WINDOW_SECONDS = 300
+
+# Uploaded raster images are shrunk so big phone/camera photos do not slow the game down on venue Wi-Fi.
+IMAGE_MAX_PX = int(os.environ.get("FQ_IMAGE_MAX_PX", "1600"))
+IMAGE_QUALITY = 85
+IMPORT_MAX_ROWS = 300

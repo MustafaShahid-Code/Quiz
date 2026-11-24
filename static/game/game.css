@@ -164,6 +164,35 @@ html[dir="rtl"] #confirmBar i { transform-origin:right center; }
 #nameErr { min-height:44px; font-size:32px; color:var(--incorrect); font-weight:700; }
 #nameBtn { margin-top:4px; }
 
+/* name screen with the on-screen keyboard: everything moves up, keys fill the middle */
+#nameBtns { display:flex; flex-direction:column; align-items:center; gap:14px; }
+#screen-name.osk #nameBox { top:96px; width:1500px; gap:8px; }
+#screen-name.osk #nameIcon { display:none; }
+#screen-name.osk #namePrompt { font-size:50px; }
+#screen-name.osk #nameRule { min-height:30px; font-size:28px; }
+#screen-name.osk #nameInput { width:880px; font-size:56px; padding:12px 24px; }
+#screen-name.osk #nameErr { min-height:34px; font-size:28px; }
+#screen-name.osk #nameBtns { flex-direction:row; gap:30px; margin-top:6px; }
+#kb { width:100%; display:flex; flex-direction:column; gap:10px; align-items:center; }
+#kb .krow { display:flex; gap:10px; justify-content:center; }
+#kb .key { min-width:96px; height:92px; padding:0 14px; font-size:46px; font-weight:700; border-radius:14px; border:3px solid color-mix(in srgb, var(--text) 35%, transparent);
+  background:rgba(255,255,255,.1); color:var(--text); cursor:pointer; font-family:inherit; line-height:1; transition:transform .06s, background .12s; }
+#kb .key:active { transform:scale(.94); background:var(--btn-bg); }
+#kb .key.wide { min-width:150px; font-size:38px; } #kb .key.space { min-width:560px; }
+#kb .key.on { background:var(--btn-bg); border-color:var(--btn-sel); }
+
+/* prize claim code on the WIN screen */
+#claimBox { position:absolute; top:290px; left:1020px; width:640px; padding:26px 30px 30px; text-align:center; background:rgba(255,255,255,.1); border:3px solid color-mix(in srgb, var(--text) 30%, transparent);
+  border-radius:var(--card-radius); backdrop-filter:blur(4px); animation:fadein .6s .5s both; }
+#claimLabel { font-size:30px; line-height:1.25; color:var(--text-muted); min-height:76px; }
+#claimCode { direction:ltr; unicode-bidi:isolate; margin:8px 0 14px; font-size:96px; font-weight:800; letter-spacing:.12em; font-family:ui-monospace,Consolas,monospace; color:var(--burst-bg); line-height:1; }
+#claimQr { width:200px; height:200px; background:#fff; padding:10px; border-radius:14px; }
+#screen-result.claim #trophy { left:26%; }
+#screen-result.claim #resTitle, #screen-result.claim #resLine, #screen-result.claim #resMsg { left:0; right:auto; width:1000px; }
+html[dir=rtl] #claimBox { left:auto; right:1020px; }
+html[dir=rtl] #screen-result.claim #trophy { left:74%; }
+html[dir=rtl] #screen-result.claim #resTitle, html[dir=rtl] #screen-result.claim #resLine, html[dir=rtl] #screen-result.claim #resMsg { left:auto; right:0; }
+
 /* ---------- branding / sponsors ---------- */
 #screen-branding { position:absolute; inset:0; background:var(--branding-bg); cursor:pointer; z-index:5; }
 #slides { position:absolute; inset:0; }
@@ -301,3 +330,12 @@ body.hide-cursor, body.hide-cursor * { cursor:none !important; }
 @keyframes sweep { to { left:130% } }
 #revealCap { margin-top:8px; padding:6px 18px; font-size:40px; font-weight:800; color:#111; line-height:1.15; }
 #sticker img { margin:0 auto; }
+/* on-screen keyboard needs the whole height: hide the big title while it is open (the heading below already names the step) */
+body:has(#screen-name.osk:not([hidden])) #titlewrap { display:none; }
+body:has(#screen-name.osk:not([hidden])) #screen-name.osk #nameBox { top:60px; }
+
+/* remote calibration overlay (driven by Admin -> Sensor); sits above everything, swallows touches */
+.calib { position:fixed; inset:0; z-index:99999; background:#000; color:#fff; cursor:none; }
+.calib-msg { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); text-align:center; font:600 30px/1.4 sans-serif; opacity:.8; white-space:pre-line; max-width:70%; }
+.calib-dot { position:absolute; display:none; width:72px; height:72px; margin:-36px; border:6px solid #ffd814; border-radius:50%; }
+.calib-dot i { position:absolute; inset:26px; background:#ffd814; border-radius:50%; }

@@ -1,0 +1,7 @@
+# Paste the values given by the remote engineer (Admin > Sensor > Remote relay > Show start command).
+server = wss://quiz.emllc.net
+key = PASTE_THE_KEY_HERE
+model = S2
+# port: leave "auto" unless the probe cannot find the sensor (then e.g. COM3)
+port = auto
+baud = auto

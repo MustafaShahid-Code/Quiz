@@ -1,7 +1,10 @@
 """Game settings, statistics and results (admin)."""
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..db import DEFAULT_SETTINGS, get_db, load_settings, save_settings
+from ..resultsq import session_filters
 from ..schemas import HEX, SettingsIn
 from ..security import ensure_game, game_clause, require_admin, require_editor, require_viewer
 
@@ -81,7 +84,7 @@ def put_settings(body: SettingsIn, _=Depends(require_admin), conn=Depends(get_db
 
 # ------------------------------------------------------------------ statistics & results
 @router.get("/stats")
-def stats(game_id: int | None = None, user=Depends(require_viewer), conn=Depends(get_db)):
+def stats(game_id: int | None = None, tz: int = 0, user=Depends(require_viewer), conn=Depends(get_db)):
     from ..security import allowed_games
     ok = allowed_games(conn, user)
     if game_id:
@@ -108,7 +111,28 @@ def stats(game_id: int | None = None, user=Depends(require_viewer), conn=Depends
     per_day = [dict(r) for r in conn.execute(f"""
         SELECT substr(started_at,1,10) day, COUNT(*) sessions FROM game_sessions {gs if game_id else ''}
         GROUP BY day ORDER BY day DESC LIMIT 14""", a)][::-1]
+    from ..resultsq import clamp_tz
+    tzm = clamp_tz(tz)
+    wl = conn.execute(f"""SELECT SUM(outcome='win') w, SUM(outcome='lose') l, AVG((julianday(finished_at)-julianday(started_at))*86400) secs
+                         FROM game_sessions WHERE finished_at IS NOT NULL {gq if game_id else ''}""", a).fetchone()
+    by_lang = {r["lang"]: r["n"] for r in conn.execute(f"SELECT lang, COUNT(*) n FROM game_sessions {gs if game_id else ''} GROUP BY lang", a)}
+    hours = [0] * 24
+    for r in conn.execute(f"SELECT started_at FROM game_sessions {gs if game_id else ''}", a):
+        try:
+            hours[(datetime.fromisoformat(r["started_at"]) + timedelta(minutes=tzm)).hour] += 1
+        except (ValueError, TypeError):
+            pass
+    easiest = [dict(r) for r in conn.execute(f"""
+        SELECT question_id, question_text, COUNT(*) answers, ROUND(100.0*SUM(is_correct)/COUNT(*),0) pct_correct
+        FROM game_responses WHERE attempt_no=1 {gr if game_id else ''} GROUP BY question_uid HAVING COUNT(*)>=3
+        ORDER BY pct_correct DESC, answers DESC LIMIT 5""", a)]
+    players = conn.execute(f"SELECT COUNT(DISTINCT lower(player_name)) n FROM game_sessions WHERE player_name IS NOT NULL {gq if game_id else ''}", a).fetchone()[0]
+    decided = int((wl["w"] or 0) + (wl["l"] or 0))
     return {
+        "outcomes": {"win": int(wl["w"] or 0), "lose": int(wl["l"] or 0), "win_rate": round(100 * (wl["w"] or 0) / decided) if decided else None},
+        "avg_round_seconds": round(wl["secs"]) if wl["secs"] is not None else None, "by_language": by_lang, "plays_by_hour": hours,
+        "easiest_questions": easiest, "unique_players": players,
+        "completion_rate": round(100 * int(sess["fin"] or 0) / sess["n"]) if sess["n"] else None,
         "questions": {"published": q.get("published", 0), "draft": q.get("draft", 0), "unpublished": q.get("unpublished", 0),
                       "total": sum(q.values())},
         "sessions": {"total": sess["n"] or 0, "finished": int(sess["fin"] or 0)},
@@ -121,20 +145,11 @@ def stats(game_id: int | None = None, user=Depends(require_viewer), conn=Depends
 
 @router.get("/sessions")
 def list_sessions(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), lang: str = "",
-                  game_id: int | None = None, user=Depends(require_viewer), conn=Depends(get_db)):
-    conds, args = [], []
-    if game_id:
-        ensure_game(conn, user, game_id)
-    sc, sa = game_clause(conn, user)
-    if sc:
-        conds.append(sc[5:]); args += sa
-    if lang in ("en", "ar"):
-        conds.append("lang=?"); args.append(lang)
-    if game_id:
-        conds.append("game_id=?"); args.append(game_id)
-    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+                  game_id: int | None = None, outcome: str = "", date_from: str = "", date_to: str = "", q: str = "", tz: int = 0,
+                  user=Depends(require_viewer), conn=Depends(get_db)):
+    where, args = session_filters(conn, user, game_id, lang, outcome, date_from, date_to, q, tz)
     total = conn.execute(f"SELECT COUNT(*) FROM game_sessions {where}", args).fetchone()[0]
-    rows = conn.execute(f"""SELECT id, lang, started_at, finished_at, score, correct_count, total_questions, player_name, outcome,
+    rows = conn.execute(f"""SELECT id, lang, started_at, finished_at, score, correct_count, total_questions, player_name, outcome, claim_code, claimed_at,
         (SELECT name_en FROM games g WHERE g.id=game_sessions.game_id) game_name,
         (SELECT group_concat(DISTINCT input_source) FROM game_responses r WHERE r.session_id=game_sessions.id) sources
         FROM game_sessions {where} ORDER BY started_at DESC LIMIT ? OFFSET ?""", args + [page_size, (page - 1) * page_size]).fetchall()

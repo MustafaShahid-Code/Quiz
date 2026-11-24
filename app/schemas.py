@@ -149,7 +149,7 @@ class AnswerIn(BaseModel):
 class SensorConfigIn(BaseModel):
     name: Optional[str] = Field(default=None, max_length=80)
     sensor_model: Optional[Literal["S2", "S3", "other"]] = None
-    source_type: Optional[Literal["none", "simulator", "serial", "subprocess", "replay"]] = None
+    source_type: Optional[Literal["none", "simulator", "serial", "subprocess", "replay", "remote"]] = None
     params: Optional[dict[str, Any]] = None
     thresholds: Optional[dict[str, Any]] = None
 

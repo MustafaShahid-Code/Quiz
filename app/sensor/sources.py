@@ -4,6 +4,8 @@
  * ReplayScanSource     - replays a JSON-lines recording (regression tests, offline tuning)
  * SubprocessScanSource - runs any command that prints JSON-lines scans (recommended bridge to the official
                           Slamtec SDK, see docs/SENSOR.md)
+ * RemoteScanSource     - scans arrive over the network from a small relay program running next to the LiDAR
+                          (the sensor is on another computer, e.g. at the venue; see docs/REMOTE_SENSOR.md)
  * SerialRplidarSource  - optional pure-Python driver (`rplidar-roboticia`); written for the A-series
                           protocol, NOT verified against S2/S3 hardware.
 """
@@ -11,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import queue
 import random
 import subprocess
 import threading
@@ -210,6 +213,46 @@ class SubprocessScanSource(ScanSource):
         raise SensorError("sensor command ended (exit code %s)" % p.poll())
 
 
+class RemoteScanSource(ScanSource):
+    """Scans are pushed by the relay program through the /ws/sensor-relay WebSocket (`push`). The service reads them here."""
+    name = "remote"
+    is_real_hardware = True
+    SILENT_LIMIT_S = 20.0
+
+    def __init__(self):
+        self._q: queue.Queue = queue.Queue(maxsize=6)
+        self._stop = threading.Event()
+
+    def open(self):
+        self._stop.clear()
+
+    def close(self):
+        self._stop.set()
+
+    def push(self, scan: Scan):
+        """Called from the WebSocket handler; never blocks. When the consumer lags, the oldest scan is dropped (fresh data wins)."""
+        while True:
+            try:
+                self._q.put_nowait(scan)
+                return
+            except queue.Full:
+                try:
+                    self._q.get_nowait()
+                except queue.Empty:
+                    pass
+
+    def scans(self):
+        silent = 0.0
+        while not self._stop.is_set():
+            try:
+                yield self._q.get(timeout=0.5)
+                silent = 0.0
+            except queue.Empty:
+                silent += 0.5
+                if silent >= self.SILENT_LIMIT_S:
+                    raise SensorError("no scans from the relay for %d s (relay stopped or network down)" % self.SILENT_LIMIT_S)
+
+
 class SerialRplidarSource(ScanSource):
     name = "serial"
     is_real_hardware = True
@@ -259,6 +302,8 @@ def build_source(source_type: str, params: dict) -> ScanSource | None:
         return SerialRplidarSource(params.get("port", "/dev/ttyUSB0"), int(params.get("baudrate", 1_000_000)))
     if source_type == "subprocess":
         return SubprocessScanSource(params.get("command", ""))
+    if source_type == "remote":
+        return RemoteScanSource()
     if source_type == "replay":
         return ReplayScanSource(params.get("path", ""), loop=bool(params.get("loop", True)),
                                 realtime=True, rate_hz=float(params.get("rate_hz", 10)))

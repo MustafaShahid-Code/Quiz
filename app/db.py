@@ -206,6 +206,20 @@ ALTER TABLE game_responses ADD COLUMN prize_name TEXT
 ALTER TABLE game_sessions ADD COLUMN player_name TEXT;
 ALTER TABLE game_sessions ADD COLUMN outcome TEXT
 """),
+    (9, "prize claim codes, served-question history", """
+ALTER TABLE game_sessions ADD COLUMN claim_code TEXT;
+ALTER TABLE game_sessions ADD COLUMN claimed_at TEXT;
+ALTER TABLE game_sessions ADD COLUMN claimed_by TEXT;
+CREATE UNIQUE INDEX idx_sessions_claim ON game_sessions(claim_code) WHERE claim_code IS NOT NULL;
+CREATE INDEX idx_sessions_outcome ON game_sessions(game_id, outcome, started_at);
+CREATE TABLE question_serves (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL,
+  served_at TEXT NOT NULL
+);
+CREATE INDEX idx_serves_game ON question_serves(game_id, question_id)
+"""),
 ]
 
 
@@ -287,6 +301,16 @@ DEFAULT_SETTINGS = {
     "win_message_en": "Great guessing!", "win_message_ar": "تخمين رائع!",
     "lose_title_en": "YOU LOSE", "lose_title_ar": "لقد خسرت",
     "lose_message_en": "Better luck next time!", "lose_message_ar": "حظاً أوفر في المرة القادمة!",
+    # prize claim code shown on the WIN screen (staff redeem it in Admin -> Prize claims)
+    "claim_code_enabled": False,
+    "claim_label_en": "Show this code to our staff to collect your prize", "claim_label_ar": "أظهر هذا الرمز للموظف لاستلام جائزتك",
+    # live leaderboard big-screen page (/game/leaderboard.html?game=<slug>)
+    "leaderboard_enabled": False,
+    "leaderboard_title_en": "Top players", "leaderboard_title_ar": "أفضل اللاعبين",
+    # touch kiosks without a keyboard: type the name on an on-screen Arabic / English keyboard
+    "on_screen_keyboard": False,
+    # when the game has more questions than a round needs, serve the ones played least recently first
+    "avoid_repeat_questions": True,
     "sound_enabled": True, "idle_reset_seconds": 60, "show_touch_cursor": True,
     "correct_title_en": "CORRECT ANSWER!", "correct_title_ar": "إجابة صحيحة!",
     "correct_messages_en": ["GOOOAL! ⚽ Great answer! 🎯", "What a finish! ⚽"],
@@ -393,6 +417,8 @@ GAME_OVERRIDE_KEYS = [
     "points_correct", "points_incorrect", "answer_timer_enabled", "answer_time_limit_ms",
     "confirm_enabled", "confirm_delay_ms", "auto_advance", "auto_advance_delay_ms", "show_explanations", "show_correct_on_wrong",
     "ask_player_name", "name_prompt_en", "name_prompt_ar", "name_button_en", "name_button_ar", "win_correct_needed",
+    "claim_code_enabled", "claim_label_en", "claim_label_ar", "leaderboard_enabled", "leaderboard_title_en", "leaderboard_title_ar",
+    "on_screen_keyboard", "avoid_repeat_questions",
     "win_title_en", "win_title_ar", "win_message_en", "win_message_ar", "lose_title_en", "lose_title_ar", "lose_message_en", "lose_message_ar",
     "high_score_percent", "vault_win_title_en", "vault_win_title_ar", "vault_lose_message_en", "vault_lose_message_ar",
     "vault_prize_hold_ms", "vault_prizes_title_en", "vault_prizes_title_ar", "branding_enabled", "branding_use_shared_slides", "branding_hint_en", "branding_hint_ar",

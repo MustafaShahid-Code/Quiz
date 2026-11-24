@@ -100,6 +100,18 @@ FQ.upload = function upload(file, onProgress) {
   });
 };
 
+FQ.tz = () => -new Date().getTimezoneOffset();     // minutes east of UTC (Qatar = 180): lets the server cut days in the viewer's time zone
+FQ.download = async function download(path, fallbackName) {
+  const r = await fetch('/api/admin' + path, { headers: { Authorization: 'Bearer ' + FQ.token() } });
+  if (r.status === 401) { FQ.logout(); throw new Error('Session expired'); }
+  if (!r.ok) { let m = r.statusText; try { const d = await r.json(); if (typeof d.detail === 'string') m = d.detail; } catch (e) { /* none */ } throw new Error(m || 'Download failed'); }
+  const cd = r.headers.get('content-disposition') || ''; const name = (cd.match(/filename="?([^";]+)"?/) || [])[1] || fallbackName || 'download';
+  const url = URL.createObjectURL(await r.blob()); const a = h('a', { href: url, download: name }); document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+};
+FQ.fmtBytes = (n) => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+FQ.savedNote = (a) => (a && a.original_bytes && a.size_bytes && a.size_bytes < a.original_bytes * 0.9) ? ` · optimized ${FQ.fmtBytes(a.original_bytes)} → ${FQ.fmtBytes(a.size_bytes)}` : '';
+
 /* ---------- asset picker (thumbnail + choose / upload / clear) */
 FQ.assetPicker = function assetPicker({ value, kind = 'image', onChange, label = 'Image' }) {
   const state = { id: value || null, url: null };
@@ -124,7 +136,7 @@ FQ.assetPicker = function assetPicker({ value, kind = 'image', onChange, label =
           const mb = (f.size / 1048576).toFixed(1) + ' MB';
           const upd = (r) => { const pct = Math.round(r * 100); bar.style.width = pct + '%'; btn.textContent = r >= 1 ? 'Processing…' : `Uploading ${pct}%`; txt.textContent = r >= 1 ? 'Upload complete, processing the image…' : `Uploading ${f.name} (${mb}) ${pct}%`; };
           upd(0);
-          try { const a = await FQ.upload(f, upd); m.close(); set(a); FQ.toast('Uploaded', 'ok'); }
+          try { const a = await FQ.upload(f, upd); m.close(); set(a); FQ.toast('Uploaded' + FQ.savedNote(a), 'ok'); }
           catch (e) { FQ.fail(e); btn.disabled = false; fileIn.disabled = false; btn.textContent = label; prog.hidden = true; } } }, 'Upload & use'),
         prog) : null, grid] });
     list.forEach(a => grid.appendChild(h('div', { class: 'it', title: a.original_name || '', onclick: () => { m.close(); set(a); } },
@@ -152,13 +164,14 @@ const ICON = {
   sensor: '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/>',
   games: '<rect x="2.5" y="7" width="19" height="11" rx="4"/><path d="M7 10.5v4M5 12.5h4M16 11.5h.01M18 13.5h.01"/>',
   results: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  claims: '<path d="M20 12v8H4v-8M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 1 1 0-5C11 2 12 7 12 7ZM12 7h4.5a2.5 2.5 0 1 0 0-5C13 2 12 7 12 7Z"/>',
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.2.6 3.5 2.4 3.5 5"/>',
 };
 FQ.icon = (name, size = 18) => { const w = h('span', { class: 'ico' }); w.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`; return w; };
 FQ.nav = [
   ['dashboard', 'Dashboard', 'viewer', null], ['games', 'Games', 'viewer', 'Content'], ['questions', 'Questions', 'viewer', 'Content'], ['characters', 'Characters', 'viewer', 'Content'], ['assets', 'Media library', 'viewer', 'Content'],
   ['schemes', 'Interaction schemes', 'viewer', 'Content'], ['slides', 'Branding slides', 'viewer', 'Look & feel'], ['themes', 'Themes & colours', 'viewer', 'Look & feel'],
-  ['settings', 'Game settings', 'viewer', 'System'], ['sensor', 'Sensor & calibration', 'viewer', 'System'], ['results', 'Results', 'viewer', 'System'], ['users', 'Users', 'admin', 'System'],
+  ['settings', 'Game settings', 'viewer', 'System'], ['sensor', 'Sensor & calibration', 'viewer', 'System'], ['results', 'Results', 'viewer', 'System'], ['claims', 'Prize claims', 'viewer', 'System'], ['users', 'Users', 'admin', 'System'],
 ];
 FQ.go = (page) => { location.hash = '#/' + page; };
 FQ.route = async function route() {

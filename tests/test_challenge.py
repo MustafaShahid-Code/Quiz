@@ -4,8 +4,8 @@ from .test_games import add_published, new_game
 CHALLENGE = {"questions_per_session": 3, "win_correct_needed": 2, "ask_player_name": True, "randomize_questions": False}
 
 
-def challenge_game(client, admin, n_questions=3, **over):
-    g = new_game(client, admin, overrides={**CHALLENGE, **over})
+def challenge_game(client, admin, n_questions=3, name="Guess the Player", **over):
+    g = new_game(client, admin, name=name, overrides={**CHALLENGE, **over})
     for i in range(n_questions):
         add_published(client, admin, f"Who is player {i}", g["id"])
     return g

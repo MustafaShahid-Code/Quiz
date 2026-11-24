@@ -43,6 +43,9 @@ answer is final; question edits do not change a running session.
 Kiosk URL parameters: `?lang=ar`, `?fullscreen=1`, `?hidecursor=1`.
 Chromium kiosk: `chromium --kiosk --noerrdialogs --autoplay-policy=no-user-gesture-required "http://localhost:8000/game/?fullscreen=1&hidecursor=1"`
 
+## Event tools
+Bulk import, prize codes, live leaderboard, on-screen keyboard, results export, backups and analytics: see [docs/EVENT_TOOLS.md](docs/EVENT_TOOLS.md).
+
 ## Configuration (environment)
 
 | Variable | Meaning |
@@ -53,6 +56,8 @@ Chromium kiosk: `chromium --kiosk --noerrdialogs --autoplay-policy=no-user-gestu
 | `FQ_JWT_SECRET` | override the generated secret |
 | `FQ_ALLOW_SUBPROCESS_SOURCE=1` | allow the SDK-bridge sensor source (runs a program) |
 | `FQ_SEED=0` | skip sample content on first start |
+| `FQ_IMAGE_MAX_PX` | longest side of uploaded pictures after automatic optimisation (default 1600) |
+| `FQ_BACKUP_DIR` | folder the dashboard checks for nightly server backups (default `/var/backups/fq`) |
 
 ## Deployment
 

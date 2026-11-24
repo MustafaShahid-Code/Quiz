@@ -68,8 +68,11 @@
         <p id="nameRule"></p>
         <input id="nameInput" type="text" maxlength="40" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="go">
         <div id="nameErr" role="alert"></div>
-        <button id="nameBtn" class="btn big" type="button"></button>
-        <button id="nameBack" class="btn small ghost" type="button"></button>
+        <div id="kb" hidden></div>
+        <div id="nameBtns">
+          <button id="nameBtn" class="btn big" type="button"></button>
+          <button id="nameBack" class="btn small ghost" type="button"></button>
+        </div>
       </div>
     </section>
 
@@ -127,6 +130,7 @@
       <div id="resScore"></div>
       <div id="resLine"></div>
       <div id="resMsg"></div>
+      <div id="claimBox" hidden><div id="claimLabel"></div><div id="claimCode"></div><img id="claimQr" alt=""></div>
       <div id="prizeList"></div>
       <div id="resButtons">
         <button class="btn big" data-action="again" type="button" id="againBtn"></button>

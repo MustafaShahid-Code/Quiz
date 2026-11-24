@@ -14,7 +14,7 @@ import numpy as np
 
 from .geometry import polar_to_xy
 from .processing import ProcessorConfig, Scan, TouchProcessor
-from .sources import ScanSource, SensorError, SimulatedScanSource, build_source
+from .sources import RemoteScanSource, ScanSource, SensorError, SimulatedScanSource, build_source
 
 STALE_AFTER_S = 2.5
 
@@ -49,6 +49,8 @@ class SensorService:
         self._last_diag = 0.0
         self._last_state_published = None
 
+        self.relay_probe: dict | None = None      # last --probe report sent by the relay (shown in Admin -> Sensor)
+        self.relay: dict = {"connected": False}   # filled by the /ws/sensor-relay handler (remote source)
         self._capture: dict | None = None      # {"event": Event, "result": (x,y)|None}
         self._learn: dict | None = None        # {"scans": [], "n": int, "event": Event}
 
@@ -118,9 +120,24 @@ class SensorService:
             return "stale"
         return self.state
 
+    def push_remote_scan(self, scan: Scan) -> bool:
+        src = self.source
+        if isinstance(src, RemoteScanSource):
+            src.push(scan)
+            return True
+        return False
+
     def status(self) -> dict:
         age = (time.monotonic() - self.last_scan_mono) if self.last_scan_mono else None
+        relay = None
+        if self.source_type == "remote":
+            relay = dict(self.relay)
+            seen = relay.pop("last_seen_mono", None)
+            relay["last_seen_age_s"] = None if seen is None else round(time.monotonic() - seen, 1)
+            if relay["last_seen_age_s"] is not None and relay["last_seen_age_s"] > 6:
+                relay["connected"] = False
         return {
+            "relay": relay,
             "state": self.current_state(),
             "source_type": self.source_type,
             "source": "simulated" if self.is_simulated else "lidar",

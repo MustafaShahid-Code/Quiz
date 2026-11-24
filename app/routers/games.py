@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..db import GAME_OVERRIDE_KEYS, GAME_TYPES, get_db, now_iso
+from ..db import GAME_OVERRIDE_KEYS, GAME_TYPES, get_db, load_settings, now_iso
 from ..security import hash_password
 from ..security import allowed_games, ensure_game, require_admin, require_editor, require_viewer
 from .settings import validate_settings
@@ -37,7 +37,10 @@ def _slugify(text: str) -> str:
 def game_dict(conn, r) -> dict:
     n = lambda sql, *a: conn.execute(sql, a).fetchone()[0]
     cover = conn.execute("SELECT filename FROM media_assets WHERE id=?", (r["cover_asset_id"],)).fetchone() if r["cover_asset_id"] else None
+    ov = json.loads(r["overrides"] or "{}")
+    lb = ov["leaderboard_enabled"] if "leaderboard_enabled" in ov else load_settings(conn).get("leaderboard_enabled", False)
     return {
+        "leaderboard_on": bool(lb),
         "id": r["id"], "slug": r["slug"], "name_en": r["name_en"], "name_ar": r["name_ar"],
         "description_en": r["description_en"], "description_ar": r["description_ar"],
         "cover_asset_id": r["cover_asset_id"], "cover_url": f"/media/{cover['filename']}" if cover else None,

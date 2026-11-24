@@ -7,7 +7,8 @@ const FQ = window.FQ, h = FQ.h;
 FQ.pages.dashboard = async (main) => {
   const games = await FQ.loadGames(); let scope = FQ.gameScope.get(); if (!games.some(g => String(g.id) === scope)) scope = '';
   const restricted = !FQ.state.user.all_games && FQ.state.user.role !== 'admin'; if (restricted && !scope && games[0]) scope = String(games[0].id);
-  const [st, sensor] = await Promise.all([FQ.api('/stats' + (scope ? '?game_id=' + scope : '')), FQ.api('/sensor/status')]);
+  const [st, sensor] = await Promise.all([FQ.api('/stats?tz=' + FQ.tz() + (scope ? '&game_id=' + scope : '')), FQ.api('/sensor/status')]);
+  const sysCard = FQ.can('admin') ? await FQ.systemCard() : null;
   const hour = new Date().getHours(); const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const stat = (icon, tone, label, value, sub) => h('div', { class: 'stat-card ' + tone }, h('div', { class: 'stat-ico' }, FQ.icon(icon, 22)), h('div', {}, h('span', { class: 'stat-label' }, label), h('b', {}, value), h('span', { class: 'stat-sub' }, sub)));
   const pct = st.responses.total ? Math.round(100 * st.responses.correct / st.responses.total) : null;
@@ -30,6 +31,18 @@ FQ.pages.dashboard = async (main) => {
       stat('results', 'green', 'Games played', st.sessions.total, `${st.sessions.finished} finished`),
       stat('characters', 'amber', 'Average result', st.avg_percent_correct == null ? '—' : st.avg_percent_correct + '%', 'of questions answered correctly'),
       stat('assets', 'violet', 'Answers recorded', st.responses.total, pct == null ? 'no answers yet' : `${pct}% correct`)),
+    h('div', { class: 'stat-grid' },
+      stat('results', 'green', 'Win rate', st.outcomes.win_rate == null ? '—' : st.outcomes.win_rate + '%', `${st.outcomes.win} won · ${st.outcomes.lose} lost`),
+      stat('users', 'blue', 'Players', st.unique_players, 'different names'),
+      stat('sensor', 'amber', 'Completed rounds', st.completion_rate == null ? '—' : st.completion_rate + '%', 'of rounds started'),
+      stat('themes', 'violet', 'Average round', st.avg_round_seconds == null ? '—' : (st.avg_round_seconds >= 60 ? Math.floor(st.avg_round_seconds / 60) + ' min ' + (st.avg_round_seconds % 60) + ' s' : st.avg_round_seconds + ' s'), 'start to finish')),
+    h('div', { class: 'dash-grid' },
+      h('div', { class: 'panel' }, h('h2', {}, 'Busiest hours'), h('p', { class: 'muted', style: { marginTop: '-6px' } }, 'Rounds played per hour of the day (your local time)'),
+        (() => { const mx = Math.max(1, ...st.plays_by_hour); return h('div', { class: 'bars hours' }, st.plays_by_hour.map((n, i) => h('div', { class: 'bar', title: `${String(i).padStart(2, '0')}:00 — ${n} round(s)` }, h('i', { style: { height: n ? Math.max(6, n / mx * 100) + '%' : '2px' } }), h('span', {}, i % 3 === 0 ? i : '')))); })()),
+      h('div', { class: 'panel' }, h('h2', {}, 'Easiest questions'), st.easiest_questions.length ? st.easiest_questions.map(q => h('div', { class: 'meter-row' }, h('div', { class: 'meter-top' }, h('span', { class: 'qt' }, q.question_text), h('b', {}, q.pct_correct + '%')),
+        h('div', { class: 'meter' }, h('i', { style: { width: q.pct_correct + '%' } })), h('span', { class: 'muted small' }, q.answers + ' answers'))) : h('p', { class: 'muted' }, 'Appears once a question has at least three answers.'),
+        h('h3', { style: { marginTop: '16px' } }, 'Language'), h('div', { class: 'row tight' }, Object.entries(st.by_language).map(([k, v]) => h('span', {}, FQ.badge(k === 'ar' ? 'العربية' : 'English', ''), ' ' + v)), Object.keys(st.by_language).length ? '' : h('span', { class: 'muted' }, '—')))),
+    sysCard ? h('div', { class: 'dash-grid' }, sysCard) : '',
     h('div', { class: 'dash-grid' },
       h('div', { class: 'panel' }, h('h2', {}, 'Games per day'), h('p', { class: 'muted', style: { marginTop: '-6px' } }, 'Last 14 days with activity'), chart),
       h('div', { class: 'panel' }, h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('h2', { style: { margin: 0 } }, 'Touch sensor'), FQ.badge(sensor.state, sensorTone)),
@@ -46,25 +59,36 @@ FQ.pages.dashboard = async (main) => {
 
 /* =========================================================== RESULTS */
 FQ.pages.results = async (main) => {
-  let page = 1, lang = '', gameId = FQ.gameScope.get(); const games = await FQ.loadGames(); if (!games.some(g => String(g.id) === gameId)) gameId = '';
+  let page = 1, gameId = FQ.gameScope.get(); const games = await FQ.loadGames(); if (!games.some(g => String(g.id) === gameId)) gameId = '';
+  const F = { lang: '', outcome: '', date_from: '', date_to: '', q: '' };
+  const qs = (extra = '') => `lang=${F.lang}&outcome=${F.outcome}&date_from=${F.date_from}&date_to=${F.date_to}&q=${encodeURIComponent(F.q)}&tz=${FQ.tz()}${gameId ? '&game_id=' + gameId : ''}${extra}`;
   const box = h('div', { class: 'panel tbl-wrap' });
   const load = async () => {
-    const r = await FQ.api(`/sessions?page=${page}&page_size=20&lang=${lang}${gameId ? '&game_id=' + gameId : ''}`); const pages = Math.max(1, Math.ceil(r.total / r.page_size));
-    box.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, ['Started', 'Game', 'Player', 'Language', 'Score', 'Correct', 'Result', 'Input', 'Finished', ''].map(x => h('th', {}, x)))),
+    const r = await FQ.api(`/sessions?page=${page}&page_size=20&${qs()}`); const pages = Math.max(1, Math.ceil(r.total / r.page_size));
+    box.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, ['Started', 'Game', 'Player', 'Language', 'Score', 'Correct', 'Result', 'Prize code', 'Input', 'Finished', ''].map(x => h('th', {}, x)))),
       h('tbody', {}, r.items.map(s => h('tr', {}, h('td', {}, FQ.fmtDate(s.started_at)), h('td', {}, s.game_name || '—'), h('td', {}, s.player_name || '—'), h('td', {}, s.lang), h('td', {}, s.score), h('td', {}, `${s.correct_count} / ${s.total_questions}`),
         h('td', {}, s.outcome ? FQ.badge(s.outcome === 'win' ? 'WIN' : 'LOSE', s.outcome === 'win' ? 'ok' : 'bad') : '—'),
+        h('td', {}, s.claim_code ? h('span', {}, h('code', {}, s.claim_code.slice(0, 3) + '-' + s.claim_code.slice(3)), ' ', s.claimed_at ? FQ.badge('collected', 'ok') : FQ.badge('waiting', 'off')) : '—'),
         h('td', {}, (s.sources || '').split(',').filter(Boolean).map(x => FQ.badge(x, x === 'simulated' ? 'sim' : ''))), h('td', {}, s.finished_at ? FQ.badge('yes', 'ok') : FQ.badge('abandoned', 'off')),
         h('td', { class: 'actions' }, h('button', { class: 'btn small', onclick: () => detail(s.id) }, 'Details')))))),
-      r.items.length ? '' : h('p', { class: 'muted' }, 'No games played yet.'),
+      r.items.length ? '' : h('p', { class: 'muted' }, 'No games match.'),
       h('div', { class: 'pager' }, h('button', { class: 'btn small', disabled: page <= 1, onclick: () => { page--; load(); } }, '‹ Prev'), h('span', { class: 'muted' }, `Page ${page} / ${pages} · ${r.total} games`), h('button', { class: 'btn small', disabled: page >= pages, onclick: () => { page++; load(); } }, 'Next ›')));
   };
+  const reload = () => { page = 1; load().catch(FQ.fail); };
   const detail = async (id) => {
     const d = await FQ.api('/sessions/' + id).catch(FQ.fail); if (!d) return;
     FQ.modal({ title: 'Game details', width: 900, body: [h('p', {}, `${d.player_name ? 'Player: ' + d.player_name + ' · ' : ''}Score ${d.score} · ${d.correct_count}/${d.total_questions} correct · ${d.lang}${d.outcome ? ' · ' + d.outcome.toUpperCase() : ''}`),
       h('table', {}, h('thead', {}, h('tr', {}, ['#', 'Question', 'Answer', 'Result', 'Prize', 'Attempt', 'Input'].map(x => h('th', {}, x)))),
         h('tbody', {}, d.responses.map((r, i) => h('tr', {}, h('td', {}, i + 1), h('td', {}, r.question_text), h('td', {}, r.selected_text || '—'), h('td', {}, FQ.badge(r.is_correct ? 'correct' : 'wrong', r.is_correct ? 'ok' : 'bad')), h('td', {}, r.prize_name || '—'), h('td', {}, r.attempt_no), h('td', {}, FQ.badge(r.input_source, r.input_source === 'simulated' ? 'sim' : ''))))))] });
   };
-  main.append(h('div', { class: 'head' }, h('h1', {}, 'Results'), h('div', { class: 'row' }, FQ.gameSelect(games, gameId, { attrs: { onchange: (e) => { gameId = e.target.value; FQ.gameScope.set(gameId); page = 1; load(); } } }), FQ.select([['', 'All languages'], ['en', 'English'], ['ar', 'العربية']], '', { onchange: (e) => { lang = e.target.value; page = 1; load(); } }))), box);
+  const inp = (k, type, ph) => h('input', { type, placeholder: ph || '', style: { width: 'auto', maxWidth: type === 'date' ? '160px' : '200px' }, oninput: (e) => { clearTimeout(inp.t); inp.t = setTimeout(() => { F[k] = e.target.value; reload(); }, type === 'text' ? 350 : 0); } });
+  main.append(h('div', { class: 'head' }, h('h1', {}, 'Results'), h('div', { class: 'row' },
+    h('button', { class: 'btn', onclick: () => FQ.download(`/sessions-export.csv?kind=rounds&${qs()}`).catch(FQ.fail) }, '⬇ Export rounds (CSV)'),
+    h('button', { class: 'btn', onclick: () => FQ.download(`/sessions-export.csv?kind=answers&${qs()}`).catch(FQ.fail) }, '⬇ Export answers (CSV)'))),
+    h('div', { class: 'row', style: { marginBottom: '12px' } }, FQ.gameSelect(games, gameId, { attrs: { onchange: (e) => { gameId = e.target.value; FQ.gameScope.set(gameId); reload(); } } }),
+      FQ.select([['', 'All languages'], ['en', 'English'], ['ar', 'العربية']], '', { style: { width: 'auto' }, onchange: (e) => { F.lang = e.target.value; reload(); } }),
+      FQ.select([['', 'Winners and losers'], ['win', 'Winners only'], ['lose', 'Losers only']], '', { style: { width: 'auto' }, onchange: (e) => { F.outcome = e.target.value; reload(); } }),
+      h('span', { class: 'muted small' }, 'From'), inp('date_from', 'date'), h('span', { class: 'muted small' }, 'to'), inp('date_to', 'date'), inp('q', 'text', 'Search player name…')), box);
   await load();
 };
 
@@ -105,6 +129,10 @@ FQ.pages.sensor = async (main) => {
   const renderStatus = (s) => statusBox.replaceChildren(h('h2', {}, 'Sensor status'), h('dl', { class: 'kv' },
     h('dt', {}, 'State'), h('dd', {}, FQ.badge(s.state, s.state === 'ok' ? 'ok' : s.state === 'disabled' ? 'off' : 'bad'), s.last_error ? h('span', { class: 'warn-text' }, '  ' + s.last_error) : null),
     h('dt', {}, 'Source'), h('dd', {}, `${s.source_type}${s.source === 'simulated' ? ' — SIMULATED, not real sensor input' : ''}`),
+    s.relay ? [h('dt', {}, 'Relay (on-site)'), h('dd', {}, s.relay.connected ? FQ.badge('connected', 'ok') : FQ.badge('not connected', 'bad'),
+      s.relay.device ? h('span', { class: 'muted' }, `  ${s.relay.device}${s.relay.mode ? ' · ' + s.relay.mode : ''}${s.relay.version ? ' · relay v' + s.relay.version : ''}`) : null,
+      s.relay.error ? h('div', { class: 'warn-text' }, 'Relay reports: ' + s.relay.error) : null,
+      s.relay.last_seen_age_s != null ? h('span', { class: 'muted' }, `  · last data ${s.relay.last_seen_age_s}s ago`) : null)] : null,
     h('dt', {}, 'Scan rate'), h('dd', {}, s.scan_hz + ' Hz · last scan ' + (s.last_scan_age_s == null ? '—' : s.last_scan_age_s + ' s ago')),
     h('dt', {}, 'Touches / reconnects'), h('dd', {}, `${s.touches_total} / ${s.reconnects}`),
     h('dt', {}, 'Calibrated'), h('dd', {}, s.calibrated ? `yes (error ${(s.calibration_rmse * 100).toFixed(2)}% of screen)` : 'no'),
@@ -115,7 +143,7 @@ FQ.pages.sensor = async (main) => {
 
   /* --- configuration */
   const f = { name: h('input', { value: cfg.name, disabled: !admin }), model: FQ.select([['S2', 'Slamtec RPLIDAR S2'], ['S3', 'Slamtec RPLIDAR S3'], ['other', 'Other']], cfg.sensor_model, { disabled: !admin }),
-    src: FQ.select([['none', 'Disabled (mouse / keyboard / touchscreen only)'], ['simulator', 'Simulator (development)'], ['serial', 'Serial driver (rplidar-roboticia, A-series protocol – unverified for S2/S3)'], ['subprocess', 'Official-SDK bridge program (JSON lines)'], ['replay', 'Replay a recorded scan file']], cfg.source_type, { disabled: !admin }),
+    src: FQ.select([['none', 'Disabled (mouse / keyboard / touchscreen only)'], ['simulator', 'Simulator (development)'], ['serial', 'Serial driver (rplidar-roboticia, A-series protocol – unverified for S2/S3)'], ['remote', 'Remote relay: the LiDAR is on another computer (S2 / S3, recommended for venues)'], ['subprocess', 'Official-SDK bridge program (JSON lines)'], ['replay', 'Replay a recorded scan file']], cfg.source_type, { disabled: !admin }),
     port: h('input', { value: cfg.params.port || '', placeholder: '/dev/ttyUSB0 or COM3', disabled: !admin }), baud: h('input', { type: 'number', value: cfg.params.baudrate || 1000000, disabled: !admin }),
     cmd: h('input', { value: cfg.params.command || '', placeholder: '/opt/fq/sdk_bridge --port /dev/ttyUSB0', disabled: !admin }), path: h('input', { value: cfg.params.path || '', placeholder: 'recorded.jsonl', disabled: !admin }) };
   const th = cfg.thresholds; const thInputs = {}; const thDefs = [['min_dist_mm', 'Ignore closer than (mm)'], ['max_dist_mm', 'Ignore farther than (mm)'], ['cluster_gap_mm', 'Cluster gap (mm)'], ['max_cluster_width_mm', 'Max object width (mm)'], ['min_cluster_points', 'Min points per object'], ['confirm_scans', 'Scans to confirm a touch'], ['release_scans', 'Scans to release'], ['debounce_ms', 'Debounce (ms)'], ['background_tolerance_mm', 'Background tolerance (mm)'], ['uv_margin', 'Margin outside screen (0–0.2)']];
@@ -170,10 +198,22 @@ FQ.pages.sensor = async (main) => {
     const key = (e) => { if (e.key === 'Escape') { api.cancelled = true; api.close(); } }; x.onclick = () => { api.cancelled = true; api.close(); }; document.addEventListener('keydown', key);
     document.body.appendChild(o); (o.requestFullscreen && o.requestFullscreen().catch(() => {})); return api; };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  /* targets can be drawn in this browser window, or on the real game screen (projector) through the server: needed when this admin is not at the venue */
+  const where = FQ.select([['game', 'On the game screen (projector, even if it is in another country)'], ['here', 'In this browser window (drag it to the projector)']], st.source_type === 'remote' ? 'game' : 'here', { style: { width: 'auto', maxWidth: '460px' } });
+  const remoteOverlay = (title) => {
+    const show = (b) => FQ.api('/sensor/calibration/show', { method: 'POST', body: b }).catch(() => {});
+    const bar = h('div', { style: { position: 'fixed', right: '16px', bottom: '16px', zIndex: 1000, background: '#0b1030', color: '#fff', padding: '12px 16px', borderRadius: '12px', boxShadow: '0 6px 24px #0006', maxWidth: '360px' } });
+    const info = h('div', { style: { marginBottom: '8px', fontWeight: 600 } }, title.split('\n')[0] + ' is running on the game screen');
+    const cancel = h('button', { class: 'btn small' }, 'Cancel'); bar.append(info, h('div', { class: 'muted', style: { marginBottom: '8px', color: '#aab' } }, 'Ask the person on site to touch each yellow target.'), cancel);
+    const api = { cancelled: false, setTarget: (u, v) => show({ action: 'show', u, v, title }), hideTarget: () => show({ action: 'hide', title: 'Thank you' }),
+      close: () => { bar.remove(); show({ action: 'end' }); } };
+    cancel.onclick = () => { api.cancelled = true; api.close(); }; document.body.appendChild(bar); show({ action: 'hide', title }); return api;
+  };
+  const makeOverlay = (title) => where.value === 'game' ? remoteOverlay(title) : targetOverlay(title);
   const TARGETS = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9], [0.5, 0.5], [0.3, 0.7], [0.7, 0.3]];
   const runCalibration = async () => {
-    if (!await FQ.confirm('Move this browser window to the projector / touch display. The overlay shows a target; touch its centre with your finger. Keep the area otherwise clear. Start?', 'Start', false)) return;
-    const ov = targetOverlay('Calibration\nTouch the yellow target when it appears'); const pts = [];
+    if (!await FQ.confirm(where.value === 'game' ? 'Targets will appear one by one on the game screen. Whoever is at the screen must touch the centre of each yellow target with a finger, and keep the area otherwise clear. Start?' : 'Move this browser window to the projector / touch display. The overlay shows a target; touch its centre with your finger. Keep the area otherwise clear. Start?', 'Start', false)) return;
+    const ov = makeOverlay('Calibration\nTouch the yellow target when it appears'); const pts = [];
     try { for (const [u, v] of TARGETS) { if (ov.cancelled) return; ov.setTarget(u, v); let raw = null;
         for (let tries = 0; tries < 2 && !raw; tries++) { try { raw = await FQ.api('/sensor/calibration/capture', { method: 'POST' }); } catch (e) { if (ov.cancelled) return; if (tries) throw e; } }
         pts.push({ target: [u, v], raw: [raw.x_mm, raw.y_mm] }); ov.hideTarget(); await sleep(700); }
@@ -182,7 +222,7 @@ FQ.pages.sensor = async (main) => {
   };
   const runValidation = async () => {
     if (!await FQ.confirm('Accuracy test: 15 random targets appear on the display. Touch each one. Start?', 'Start', false)) return;
-    const ov = targetOverlay('Accuracy test\nTouch each target as it appears'); const trials = []; let pending = null;
+    const ov = makeOverlay('Accuracy test\nTouch each target as it appears'); const trials = []; let pending = null;
     const ws2 = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/input`);
     ws2.onmessage = (e) => { const m = JSON.parse(e.data); if (m.type === 'touch' && pending && m.source === 'lidar' && !pending.hit) pending.hit = [m.u, m.v], pending.t1 = performance.now(), pending.done(); else if (m.type === 'touch' && pending && !pending.hit && m.source === 'simulated') pending.hit = [m.u, m.v], pending.t1 = performance.now(), pending.done(); };
     await new Promise(r => { ws2.onopen = r; setTimeout(r, 1500); });
@@ -200,15 +240,25 @@ FQ.pages.sensor = async (main) => {
   const calPanel = h('div', { class: 'panel' }, h('h2', {}, 'Calibration & validation'), calInfo,
     h('p', { class: 'muted' }, 'Calibration maps the sensor plane to the projected screen using 7 touched targets. The accuracy test then touches random targets and must meet the limits before the setup is called validated.'),
     v.at ? h('p', {}, 'Last accuracy test: ', v.passed ? FQ.badge('passed', 'ok') : FQ.badge('failed', 'bad'), ` ${FQ.fmtDate(v.at)} · source ${v.source_type} · mean error ${(v.mean_error * 100).toFixed(2)}%`) : h('p', { class: 'muted' }, 'No accuracy test recorded.'),
+    admin ? h('div', { class: 'row', style: { marginBottom: '8px' } }, h('span', { class: 'muted' }, 'Show the targets:'), where) : null,
     admin ? h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: runCalibration }, 'Calibrate…'), h('button', { class: 'btn', onclick: runValidation }, 'Accuracy test…'),
       h('button', { class: 'btn', onclick: async () => { if (!await FQ.confirm('The screen and play area must be completely clear while the sensor learns the static background. Learn now?', 'Learn', false)) return; try { const r = await FQ.api('/sensor/background/learn', { method: 'POST' }); FQ.toast(`Background learned (${r.bins} angle bins)`, 'ok'); FQ.route(); } catch (e) { FQ.fail(e); } } }, cfg.has_background ? 'Re-learn background' : 'Learn background'),
       cfg.has_background ? h('button', { class: 'btn danger', onclick: async () => { await FQ.api('/sensor/background', { method: 'DELETE' }).catch(FQ.fail); FQ.route(); } }, 'Clear background') : null,
       cfg.calibration && cfg.calibration.homography ? h('button', { class: 'btn danger', onclick: async () => { if (await FQ.confirm('Remove calibration?', 'Remove')) { await FQ.api('/sensor/calibration', { method: 'DELETE' }).catch(FQ.fail); FQ.route(); } } }, 'Clear calibration') : null) : h('p', { class: 'muted' }, 'Administrators only.'));
 
+  /* --- remote relay setup */
+  const relayCmd = (key) => `python fq_relay.py --server wss://${location.host} --key ${key} --model ${f.model.value === 'S3' ? 'S3' : 'S2'}`;
+  const relayBox = admin ? h('div', { class: 'panel' }, h('h2', {}, 'Remote relay (LiDAR at the venue)'),
+    h('p', { class: 'muted' }, 'Use this when the LiDAR is connected to another computer. Set Source = Remote relay above and Save. That computer then runs a small relay program (fq_relay.py, no game code on it) which sends the sensor data to this server. The game itself runs from this website in Chrome on the projector computer.'),
+    h('div', { class: 'row' }, h('code', {}, cfg.params.relay_key ? cfg.params.relay_key.slice(0, 6) + '…' : 'no key yet'),
+      h('button', { class: 'btn small', onclick: () => { const k = cfg.params.relay_key; if (!k) return; FQ.modal({ title: 'Relay start command', width: 760, body: [h('p', {}, 'Copy this command and run it on the computer that has the LiDAR attached (Windows PowerShell, in the folder containing fq_relay.py). Treat the key like a password.'), h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#0b1030', color: '#dfe6ff', padding: '12px', borderRadius: '8px' } }, relayCmd(k)), h('button', { class: 'btn small', onclick: async () => { try { await navigator.clipboard.writeText(relayCmd(k)); FQ.toast('Copied', 'ok'); } catch (e) { FQ.toast('Select the text and copy it'); } } }, 'Copy command')] }); } }, 'Show start command'),
+      h('button', { class: 'btn small', onclick: async () => { const r = await FQ.api('/sensor/relay-probe').catch(FQ.fail); if (!r) return; FQ.modal({ title: 'Last sensor check from the relay', width: 800, body: [r.report ? h('pre', { style: { whiteSpace: 'pre-wrap', background: '#0b1030', color: '#dfe6ff', padding: '12px', borderRadius: '8px', maxHeight: '60vh', overflow: 'auto' } }, r.report) : h('p', { class: 'muted' }, 'No report yet. On the venue computer run probe.bat (it sends the report here).')] }); } }, 'View last sensor check'),
+      h('button', { class: 'btn small danger', onclick: async () => { if (!await FQ.confirm('Make a new relay key? The relay that is connected now will be disconnected and must be restarted with the new key.', 'New key')) return; const r = await FQ.api('/sensor/relay-key/rotate', { method: 'POST' }).catch(FQ.fail); if (r) { cfg.params.relay_key = r.relay_key; FQ.toast('New relay key created', 'ok'); FQ.route(); } } }, 'Generate new key'))) : null;
+
   /* --- pose input key */
   const keyBox = h('div', { class: 'panel' }, h('h2', {}, 'Pose / camera input'), h('p', { class: 'muted' }, 'Poses cannot be derived from the LiDAR. An external camera service may post recognised pose labels to POST /api/input/pose with the header x-input-key. Pose schemes stay disabled until such a service is connected.'),
     admin ? [h('div', { class: 'row' }, h('code', {}, cfg.params.input_key ? cfg.params.input_key.slice(0, 6) + '…' : 'no key yet'), h('button', { class: 'btn small', onclick: async () => { const r = await FQ.api('/sensor/input-key/rotate', { method: 'POST' }).catch(FQ.fail); if (r) FQ.modal({ title: 'New input key', width: 520, body: [h('p', {}, 'Copy it now; it is only shown in full here.'), h('code', { style: { wordBreak: 'break-all' } }, r.input_key)] }); } }, 'Generate new key'))] : null);
 
-  main.append(h('div', { class: 'head' }, h('h1', {}, 'Sensor & calibration')), statusBox, h('div', { class: 'panel' }, h('h2', {}, 'Live scan view'), canvas, h('p', { class: 'muted' }, 'Blue: scan points · yellow rings: touch candidates · green: calibrated screen outline.')), simPanel, calPanel, configPanel, keyBox);
+  main.append(h('div', { class: 'head' }, h('h1', {}, 'Sensor & calibration')), statusBox, h('div', { class: 'panel' }, h('h2', {}, 'Live scan view'), canvas, h('p', { class: 'muted' }, 'Blue: scan points · yellow rings: touch candidates · green: calibrated screen outline.')), simPanel, calPanel, configPanel, relayBox, keyBox);
 };
 })();

@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from .. import config, quiz, themes
@@ -178,6 +178,49 @@ def timeout(sid: str, body: TimeoutIn, conn=Depends(get_db)):
 @router.get("/api/game/sessions/{sid}/result")
 def result(sid: str, conn=Depends(get_db)):
     return quiz.get_result(conn, sid)
+
+
+@router.get("/api/game/sessions/{sid}/claim.svg")
+def claim_qr(sid: str, conn=Depends(get_db)):
+    """QR code of the prize claim code (a staff member can scan it into the Prize claims page). Only for a won round."""
+    import io
+    import segno
+    row = conn.execute("SELECT claim_code, outcome FROM game_sessions WHERE id=?", (sid,)).fetchone()
+    if not row or not row["claim_code"] or row["outcome"] != "win":
+        raise HTTPException(404, "No prize code for this round")
+    buf = io.BytesIO()
+    segno.make(row["claim_code"], error="m", micro=False).save(buf, kind="svg", scale=8, border=2, dark="#000", light="#fff", xmldecl=False, svgns=True, nl=False)
+    return Response(buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/game/leaderboard")
+def leaderboard(request: Request, game: str, period: str = "today", tz: int = 0, limit: int = 10, conn=Depends(get_db)):
+    """Public big-screen data: best scores and latest winners of one game. Off unless the game switches it on (names are shown)."""
+    from datetime import datetime, timedelta, timezone
+    from ..resultsq import clamp_tz, day_start_utc
+    g = game_row(conn, game)
+    if not g or not g["enabled"]:
+        raise HTTPException(404, "Game not found or not available")
+    s = game_settings(conn, g)
+    if not s.get("leaderboard_enabled"):
+        raise HTTPException(404, "The leaderboard is not switched on for this game")
+    if not _access_ok(conn, g, request):
+        raise HTTPException(401, "This game needs its access password")
+    limit = max(1, min(int(limit), 25)); tzm = clamp_tz(tz)
+    conds, args = ["game_id=?", "finished_at IS NOT NULL", "player_name IS NOT NULL"], [g["id"]]
+    if period == "today":
+        local_today = (datetime.now(timezone.utc) + timedelta(minutes=tzm)).strftime("%Y-%m-%d")
+        conds.append("started_at>=?"); args.append(day_start_utc(local_today, tzm))
+    where = " AND ".join(conds)
+    cols = "player_name, score, correct_count, total_questions, outcome, finished_at"
+    top = conn.execute(f"""SELECT {cols} FROM game_sessions WHERE {where}
+        ORDER BY score DESC, correct_count DESC, (julianday(finished_at)-julianday(started_at)) ASC LIMIT ?""", args + [limit]).fetchall()
+    winners = conn.execute(f"SELECT {cols} FROM game_sessions WHERE {where} AND outcome='win' ORDER BY finished_at DESC LIMIT ?", args + [limit]).fetchall()
+    tot = conn.execute(f"SELECT COUNT(*) n, SUM(outcome='win') w FROM game_sessions WHERE {where}", args).fetchone()
+    return {"title_en": s["leaderboard_title_en"], "title_ar": s["leaderboard_title_ar"], "game_title_en": s["title_en"], "game_title_ar": s["title_ar"],
+            "has_outcome": int(s.get("win_correct_needed") or 0) > 0, "period": period,
+            "top": [dict(r) for r in top], "winners": [dict(r) for r in winners],
+            "stats": {"rounds": tot["n"] or 0, "wins": int(tot["w"] or 0)}}
 
 
 @router.get("/health")

@@ -38,11 +38,19 @@ const OVERRIDES = [
     ['win_message_en', 'Win message (English)', 'text'], ['win_message_ar', 'Win message (Arabic)', 'text', 'rtl'],
     ['lose_title_en', 'Lose title (English)', 'text'], ['lose_title_ar', 'Lose title (Arabic)', 'text', 'rtl'],
     ['lose_message_en', 'Lose message (English)', 'text'], ['lose_message_ar', 'Lose message (Arabic)', 'text', 'rtl']]],
+  ['Event features: prize code, leaderboard, keyboard', [
+    ['claim_code_enabled', 'Give winners a prize code + QR (staff redeem it under Prize claims)', 'bool'],
+    ['claim_label_en', 'Prize code caption (English)', 'text'], ['claim_label_ar', 'Prize code caption (Arabic)', 'text', 'rtl'],
+    ['leaderboard_enabled', 'Allow the live leaderboard page for this game', 'bool'],
+    ['leaderboard_title_en', 'Leaderboard title (English)', 'text'], ['leaderboard_title_ar', 'Leaderboard title (Arabic)', 'text', 'rtl'],
+    ['on_screen_keyboard', 'Show an on-screen keyboard for the name (kiosk without a physical keyboard)', 'bool'],
+    ['avoid_repeat_questions', 'Give each player fresh questions (rotate through the pool)', 'bool']]],
 ];
 
 FQ.pages.games = async (main) => {
   const [games, themesList, settings, types] = await Promise.all([FQ.loadGames(), FQ.api('/themes'), FQ.api('/settings'), FQ.api('/game-types')]);
   const edit = FQ.can('admin');
+  const lbUrl = (g) => `/game/leaderboard.html?game=${encodeURIComponent(g.slug)}`;
   const gameUrl = (g) => `${location.origin}/game/?game=${encodeURIComponent(g.slug)}`;
 
   const form = async (g) => {
@@ -115,9 +123,12 @@ FQ.pages.games = async (main) => {
       h('button', { class: 'btn small primary', onclick: () => { FQ.gameScope.set(String(g.id)); FQ.go('questions'); } }, 'Questions'),
       h('a', { class: 'btn small', href: `/game/?game=${encodeURIComponent(g.slug)}`, target: '_blank', rel: 'noopener' }, '▶ Play'),
       h('button', { class: 'btn small', onclick: async () => { try { await navigator.clipboard.writeText(gameUrl(g)); FQ.toast('Link copied', 'ok'); } catch { FQ.toast(gameUrl(g)); } } }, 'Copy link'),
+      g.leaderboard_on ? h('a', { class: 'btn small', href: lbUrl(g), target: '_blank', rel: 'noopener' }, '🏆 Leaderboard') : null,
       edit ? h('button', { class: 'btn small', onclick: () => form(g) }, 'Edit') : null,
       edit ? FQ.menu('More ▾', [
         !g.is_default && { label: 'Make default', onclick: async () => { try { await FQ.api(`/games/${g.id}/make-default`, { method: 'POST' }); FQ.toast('Default game changed', 'ok'); FQ.route(); } catch (e) { FQ.fail(e); } } },
+        g.leaderboard_on && { label: 'Copy leaderboard link', onclick: async () => { const u = location.origin + lbUrl(g); try { await navigator.clipboard.writeText(u); FQ.toast('Leaderboard link copied', 'ok'); } catch { FQ.toast(u); } } },
+        { label: 'Clear test results…', danger: true, onclick: () => FQ.clearResultsDialog(g, () => FQ.route()) },
         !g.is_default && { label: 'Delete…', danger: true, onclick: async () => { if (await FQ.confirm(`Delete the game “${g.name_en || g.name_ar}”? This only works when it has no questions or results.`)) { try { await FQ.api('/games/' + g.id, { method: 'DELETE' }); FQ.route(); } catch (e) { FQ.fail(e); } } } }]) : null));
 
   main.append(h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Games'), h('p', { class: 'muted', style: { margin: 0 } }, 'Each game has its own questions, and can have its own look and rules. Players choose a game on the start screen, or you can link straight to one.')),

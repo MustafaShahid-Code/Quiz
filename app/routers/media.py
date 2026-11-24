@@ -8,7 +8,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 
-from .. import config, themes
+from .. import config, images, themes
 from ..db import DEFAULT_THEME_TOKENS, get_db, load_settings, now_iso, resolve_theme_tokens
 from ..questions import media_url
 from ..schemas import SlideIn, ThemeIn
@@ -52,8 +52,20 @@ def detect_and_validate(data: bytes) -> dict:
     return {"mime": mime, "ext": ext, "width": w, "height": h, "kind": "image"}
 
 
+def shrink(data: bytes, info: dict) -> tuple[bytes, dict]:
+    """Optimise raster images (resize, strip metadata, recompress) and re-describe the result."""
+    if info["kind"] != "image" or info["mime"] == "image/svg+xml":
+        return data, info
+    fmt = {v[0]: k for k, v in IMAGE_TYPES.items()}[info["mime"]]
+    new, new_fmt = images.optimize(data, fmt)
+    if new is data:
+        return data, info
+    return new, detect_and_validate(new)
+
+
 def store_asset(conn, data: bytes, original_name: str | None) -> int:
     info = detect_and_validate(data)
+    data, info = shrink(data, info)
     fname = f"{uuid.uuid4().hex}.{info['ext']}"
     (config.upload_dir() / fname).write_bytes(data)
     cur = conn.execute("INSERT INTO media_assets(filename,original_name,mime,size_bytes,width,height,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -101,8 +113,11 @@ def list_assets(kind: str = "", _=Depends(require_viewer), conn=Depends(get_db))
 @router.post("/assets", status_code=201)
 async def upload_asset(file: UploadFile = File(...), _=Depends(require_editor), conn=Depends(get_db)):
     data = await file.read(config.MAX_UPLOAD_BYTES + 1)
+    original = len(data)
     aid = store_asset(conn, data, file.filename)
-    return asset_dict(conn.execute("SELECT * FROM media_assets WHERE id=?", (aid,)).fetchone())
+    out = asset_dict(conn.execute("SELECT * FROM media_assets WHERE id=?", (aid,)).fetchone())
+    out["original_bytes"] = original      # the upload dialog shows "6.8 MB -> 410 KB"
+    return out
 
 
 @router.put("/assets/{aid}/replace")
@@ -112,6 +127,7 @@ async def replace_asset(aid: int, file: UploadFile = File(...), _=Depends(requir
         raise HTTPException(404, "Asset not found")
     data = await file.read(config.MAX_UPLOAD_BYTES + 1)
     info = detect_and_validate(data)
+    data, info = shrink(data, info)
     fname = f"{uuid.uuid4().hex}.{info['ext']}"
     (config.upload_dir() / fname).write_bytes(data)
     conn.execute("UPDATE media_assets SET filename=?,original_name=?,mime=?,size_bytes=?,width=?,height=? WHERE id=?",

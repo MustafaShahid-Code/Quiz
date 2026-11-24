@@ -188,12 +188,44 @@ function ruleLine() {
   const total = per ? Math.min(per, avail) : avail; return total ? t('rule', Math.min(need, total), total) : '';
 }
 function begin() { return askName() ? goName() : startGame(S.lang); }
+
+/* ---- on-screen keyboard (touch kiosks without a physical keyboard): English / Arabic, shift, space, backspace */
+const KB = {
+  en: [['q','w','e','r','t','y','u','i','o','p'], ['a','s','d','f','g','h','j','k','l'], ['z','x','c','v','b','n','m']],
+  ar: [['ض','ص','ث','ق','ف','غ','ع','ه','خ','ح','ج','د'], ['ش','س','ي','ب','ل','ا','ت','ن','م','ك','ط'], ['ئ','ء','ؤ','ر','لا','ى','ة','و','ز','ظ']],
+};
+const KB_SHIFT_AR = { 'ا': 'أ', 'ى': 'إ', 'ء': 'آ' };
+function buildKeyboard(inp, onEnter) {
+  const kb = $('kb'); let mode = S.lang === 'ar' ? 'ar' : 'en', shift = mode === 'en';
+  const label = (k) => mode === 'en' ? (shift ? k.toUpperCase() : k) : (shift && KB_SHIFT_AR[k] ? KB_SHIFT_AR[k] : k);
+  const key = (txt, cls, data) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'key ' + (cls || ''); b.textContent = txt; b.dataset.action = 'key'; b.dataset.k = data; return b; };
+  const render = () => {
+    kb.replaceChildren(); kb.dir = 'ltr';
+    for (const row of KB[mode]) { const r = document.createElement('div'); r.className = 'krow'; for (const k of row) r.appendChild(key(label(k), '', 'c:' + label(k))); kb.appendChild(r); }
+    const last = document.createElement('div'); last.className = 'krow';
+    last.append(key('⇧', 'wide' + (shift ? ' on' : ''), 'shift'), key(mode === 'en' ? 'ع' : 'EN', 'wide', 'lang'), key('␣', 'space', 'c: '), key('⌫', 'wide', 'back'));
+    kb.appendChild(last);
+  };
+  S.kbPress = (k) => {
+    const v = inp.value;
+    if (k === 'shift') { shift = !shift; return render(); }
+    if (k === 'lang') { mode = mode === 'en' ? 'ar' : 'en'; shift = mode === 'en'; return render(); }
+    if (k === 'back') { inp.value = Array.from(v).slice(0, -1).join(''); }
+    else if (k.startsWith('c:') && Array.from(v).length < 40) { inp.value = v + k.slice(2); if (mode === 'en' && shift) { shift = false; render(); } }
+    inp.dispatchEvent(new Event('input')); inp.focus({ preventScroll: true });
+  };
+  S.kbEnter = onEnter; render(); kb.hidden = false;
+}
 function goName() {
   show('name'); S.phase = 'idle'; setLang(S.lang);
   const inp = $('nameInput'), err = $('nameErr'), btn = $('nameBtn');
   $('namePrompt').textContent = S.settings['name_prompt_' + S.lang] || t('name_prompt'); $('nameRule').textContent = ruleLine();
   btn.textContent = S.settings['name_button_' + S.lang] || t('start'); $('nameBack').textContent = t('home');
-  inp.value = ''; err.textContent = ''; inp.dir = 'auto'; btn.disabled = false; setTimeout(() => inp.focus(), 80);
+  inp.value = ''; err.textContent = ''; inp.dir = 'auto'; btn.disabled = false;
+  const osk = !!S.settings.on_screen_keyboard;
+  $('screen-name').classList.toggle('osk', osk); $('kb').hidden = !osk; inp.inputMode = osk ? 'none' : 'text';   // no system keyboard on kiosks; a physical keyboard still types
+  S.kbPress = null; if (osk) buildKeyboard(inp, null);
+  setTimeout(() => inp.focus({ preventScroll: true }), 80);
   const go = () => {
     const n = inp.value.replace(/\s+/g, ' ').trim();
     if (!n) { err.textContent = t('name_required'); inp.focus(); return; }
@@ -464,6 +496,8 @@ async function showResult() {
   const rs = $('screen-result'), named = !isVault() && !!r.player_name, decided = !isVault() && !!r.outcome;
   rs.classList.toggle('named', named); rs.classList.toggle('decided', decided); rs.classList.remove('won', 'lost');
   $('resName').textContent = named ? r.player_name : ''; $('resMsg').textContent = '';
+  const hasClaim = decided && !!r.claim_code; rs.classList.toggle('claim', hasClaim); $('claimBox').hidden = !hasClaim;
+  if (hasClaim) { $('claimLabel').textContent = r.claim_label || ''; $('claimCode').textContent = r.claim_code; $('claimQr').src = `/api/game/sessions/${encodeURIComponent(S.session.session_id)}/claim.svg`; }
   if (decided) {
     const win = r.outcome === 'win'; rs.classList.add(win ? 'won' : 'lost');
     $('trophy').innerHTML = win ? TROPHY : RED_CARD;
@@ -504,8 +538,9 @@ function drawBurst(spikes) {
 
 /* ------------------------------------------------------------------ input handling */
 function activate(el, source) {
-  const now = performance.now(); if (now - S.lastHandled < 250) return; S.lastHandled = now; resetIdle();
   const a = el.dataset.action;
+  if (a === 'key') { resetIdle(); if (S.screen === 'name' && S.kbPress) S.kbPress(el.dataset.k); return; }   // typing is never debounced
+  const now = performance.now(); if (now - S.lastHandled < 250) return; S.lastHandled = now; resetIdle();
   if (a === 'enter') return goWelcome();
   if (a === 'lang') { if (el.disabled) return; S.lang = el.dataset.lang; setLang(S.lang); goWelcomeKeep(); return; }
   if (a === 'start') return begin();
@@ -553,9 +588,25 @@ function connectWS() {
     if (d.type === 'status') { S.sensor = d; renderChip(); }
     else if (d.type === 'touch' && d.u != null && d.v != null) { S.sensor = { ...S.sensor, state: 'ok', source: d.source, validated: d.validated }; hitTest(d.u, d.v, d.source === 'simulated' ? 'simulated' : 'lidar'); }
     else if (d.type === 'pose') onPose(d);
+    else if (d.type === 'calib') onCalib(d);
   };
   ws.onclose = () => { S.sensor = { ...S.sensor, state: 'error' }; renderChip(); setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 2, 10000); };
   ws.onerror = () => ws.close();
+}
+/* Calibration / accuracy-test targets driven from the admin page (so the sensor can be set up remotely while someone on site only touches the screen). */
+let calibEl = null, calibTimer = 0;
+function onCalib(d) {
+  clearTimeout(calibTimer);
+  if (d.action === 'end') { if (calibEl) { calibEl.remove(); calibEl = null; } return; }
+  if (!calibEl) {
+    calibEl = document.createElement('div'); calibEl.className = 'calib';
+    calibEl.innerHTML = '<div class="calib-msg"></div><div class="calib-dot"><i></i></div>';
+    document.body.appendChild(calibEl);
+  }
+  calibEl.querySelector('.calib-msg').textContent = d.title || '';
+  const dot = calibEl.querySelector('.calib-dot');
+  if (d.action === 'show') { dot.style.display = 'block'; dot.style.left = (d.u * 100) + '%'; dot.style.top = (d.v * 100) + '%'; } else dot.style.display = 'none';
+  calibTimer = setTimeout(() => { if (calibEl) { calibEl.remove(); calibEl = null; } }, 90000);   // safety: never leave the projector stuck on a target
 }
 function onPose(d) {
   const sch = S.q && S.q.scheme; if (!sch || sch.type !== 'pose_mapping' || S.screen !== 'question') return;
